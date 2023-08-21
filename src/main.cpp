@@ -8,7 +8,7 @@
 
 void setup() {
   //initialize Serial Monitor
-  Serial.begin(115200);
+  Serial.begin(1152000);
   while (!Serial);
   Serial.println("LoRa Receiver");
 
