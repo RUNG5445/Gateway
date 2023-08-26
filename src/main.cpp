@@ -172,8 +172,8 @@ void processJsonInput(const char * jsonInput) {
     return;
   }
 
-  temp = doc["TEMP"];
-  humi = doc["HUMI"];
+  temp = doc["Temperature"];
+  humi = doc["Humidity"];
 }
 
 void setup() {
