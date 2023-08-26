@@ -275,6 +275,6 @@ void loop()
 {
 
   getGPS();
-  connect2LTE()
+  connect2LTE();
 
 }
