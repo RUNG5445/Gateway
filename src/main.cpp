@@ -124,8 +124,8 @@ void request()
   bool DEBUG = true;
   SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
 
-  String http_str = "AT+HTTPPARA=\"URL\",\"http://rung.ddns.net:1142/data?NodeName=" +
-                    NodeName +
+  String http_str = "AT+HTTPPARA=\"URL\",\"http://rung.ddns.net:1142/data?"
+                    "NodeName=" + NodeName +
                     "&temp=" + temp +
                     "&humi=" + humi +
                     "&lat=" + latText +
