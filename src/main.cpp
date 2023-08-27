@@ -30,6 +30,13 @@ int humi;
 String NodeName;
 double sleepmin = 1;
 
+// LoRa configuration
+int SyncWord;
+int TxPower;
+long freq;
+double interval;
+int sendSyncWord = 5;
+
 void modemPowerOn()
 {
   const int SUPPLY_PIN = PIN_SUP;
@@ -125,7 +132,8 @@ void request()
   SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
 
   String http_str = "AT+HTTPPARA=\"URL\",\"http://rung.ddns.net:1142/data?"
-                    "NodeName=" + NodeName +
+                    "NodeName=" +
+                    NodeName +
                     "&temp=" + temp +
                     "&humi=" + humi +
                     "&lat=" + latText +
@@ -139,6 +147,22 @@ void request()
 
   delay(2000);
   SerialMon.println("\n----------   End of sendrequest()   ----------\n");
+}
+
+String createJsonString(int SyncWord, int TxPower, long freq, double interval)
+{
+  Serial.println("\n----------   Start of createJsonString()   ----------\n");
+  StaticJsonDocument<512> doc;
+
+  doc["SyncWord"] = SyncWord;
+  doc["TxPower"] = TxPower;
+  doc["freq"] = freq;
+  doc["interval"] = interval;
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+  Serial.println("\n----------   End of createJsonString()   ----------\n");
+  return jsonString;
 }
 
 String processGPSResponse(String response)
@@ -191,9 +215,9 @@ void connect2LTE()
   sendAT("AT+CPIN?", 2000, DEBUG);
 
   delay(1000);
-  sendAT("AT+CSOCKSETPN=1", 2000, DEBUG);
-  sendAT("AT+NETOPEN", 2000, DEBUG);
-  sendAT("AT+IPADDR", 2000, DEBUG);
+  sendAT("AT+CSOCKSETPN=1", 5000, DEBUG);
+  sendAT("AT+NETOPEN", 5000, DEBUG);
+  sendAT("AT+IPADDR", 5000, DEBUG);
 
   delay(1000);
   // sendAT("AT+CPING=\"rung.ddns.net\",1,4", 10000, DEBUG);
@@ -238,7 +262,7 @@ void setup()
 
 void loop()
 {
-
+  LoRa.setSyncWord(0xF1);
   int packetSize = LoRa.parsePacket();
   if (packetSize)
   {
@@ -274,27 +298,36 @@ void loop()
     if (dataIndex > 0)
     {
       LoRaData[dataIndex] = '\0';
+      delay(3000);
+      String jsonOutput = createJsonString(241, 20, 923E6, 1);
+
+      Serial.println("Switching to sending state...");
+      Serial.print("Packet send: ");
+      Serial.println(jsonOutput);
+      LoRa.setSyncWord(0xF2);
+      LoRa.beginPacket();
+      LoRa.print(jsonOutput);
+      LoRa.endPacket();
       processJsonInput(LoRaData);
 
-      for (int i = 0; i < 2; i++)
-      {
-        // Send the AT command to enable GNSS
-        String response = sendAT("AT+CGNSSPWR=1", 1000, DEBUG);
+      // for (int i = 0; i < 2; i++)
+      // {
+      //   // Send the AT command to enable GNSS
+      //   String response = sendAT("AT+CGNSSPWR=1", 1000, DEBUG);
 
-        delay(2000); // Delay before the next command
+      //   delay(2000); // Delay before the next command
 
-        // Send the AT command to retrieve GNSS info
-        sendAT("AT+CGNSSINFO?", 1000, DEBUG);
-        gpsinfo = sendAT("AT+CGNSSINFO", 5000, DEBUG);
+      //   // Send the AT command to retrieve GNSS info
+      //   sendAT("AT+CGNSSINFO?", 1000, DEBUG);
+      //   gpsinfo = sendAT("AT+CGNSSINFO", 5000, DEBUG);
 
-        delay(1000); // Delay before the next iteration
-      }
+      //   delay(1000); // Delay before the next iteration
+      // }
 
       processGPSResponse(gpsinfo);
 
-      delay(100);
-
       request();
+      // esp_restart();
     }
   }
 }
