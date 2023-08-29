@@ -31,7 +31,7 @@ String NodeName;
 double sleepmin = 1;
 
 // LoRa configuration
-int SyncWord;
+int SyncWord ;
 int TxPower;
 long freq;
 double interval;
@@ -132,8 +132,7 @@ void request()
   SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
 
   String http_str = "AT+HTTPPARA=\"URL\",\"http://rung.ddns.net:1142/data?"
-                    "NodeName=" +
-                    NodeName +
+                    "NodeName=" + NodeName +
                     "&temp=" + temp +
                     "&humi=" + humi +
                     "&lat=" + latText +
@@ -149,7 +148,7 @@ void request()
   SerialMon.println("\n----------   End of sendrequest()   ----------\n");
 }
 
-String createJsonString(int SyncWord, int TxPower, long freq, double interval)
+String createJsonString(int SyncWord,int TxPower,long freq,double interval)
 {
   Serial.println("\n----------   Start of createJsonString()   ----------\n");
   StaticJsonDocument<512> doc;
@@ -258,6 +257,7 @@ void setup()
   modemPowerOn();
   delay(1000);
   connect2LTE();
+
 }
 
 void loop()
@@ -299,7 +299,7 @@ void loop()
     {
       LoRaData[dataIndex] = '\0';
       delay(3000);
-      String jsonOutput = createJsonString(241, 20, 923E6, 1);
+      String jsonOutput = createJsonString(241,20,923E6,1);
 
       Serial.println("Switching to sending state...");
       Serial.print("Packet send: ");
@@ -329,5 +329,6 @@ void loop()
       request();
       // esp_restart();
     }
+
   }
 }
