@@ -131,7 +131,7 @@ void request()
   bool DEBUG = true;
   SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
 
-  String http_str = "AT+HTTPPARA=\"URL\",\"http://rung.ddns.net:1142/data?"
+  String http_str = "AT+HTTPPARA=\"URL\",\"https://portal.preproject.site:5000/insert_data?"
                     "NodeName=" + NodeName +
                     "&temp=" + temp +
                     "&humi=" + humi +
@@ -326,9 +326,13 @@ void loop()
 
       processGPSResponse(gpsinfo);
 
+      
+
       request();
       // esp_restart();
     }
+
+
 
   }
 }
