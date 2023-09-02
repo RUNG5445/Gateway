@@ -226,10 +226,10 @@ void sendrequest()
   Serial.println("Response =" + response);
   int startIndex = response.indexOf("\"lat\":");
   int endIndex = response.indexOf(",\"lon\":");
-  String latText = response.substring(startIndex + 6, endIndex);
+  latText = response.substring(startIndex + 6, endIndex);
   startIndex = endIndex + 7;
   endIndex = response.indexOf(",\"accuracy\":");
-  String lonText = response.substring(startIndex, endIndex);
+  lonText = response.substring(startIndex, endIndex);
   Serial.println("Latitude: " + latText);
   Serial.println("Longitude: " + lonText);
   SerialMon.println("\n----------   End of sendrequest()   ----------\n");
@@ -237,22 +237,21 @@ void sendrequest()
 
 void request()
 {
-
   bool DEBUG = true;
   SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
 
-  String http_str = "AT+HTTPPARA=\"URL\",\"https://portal.preproject.site:5000/insert_data?"
-                    "NodeName=" +
+  String http_str = "AT+HTTPPARA=\"URL\",\"https://qr18o31mfb.execute-api.ap-southeast-1.amazonaws.com/data?"
+                    "nodename=" +
                     NodeName +
-                    "&temp=" + temp +
-                    "&humi=" + humi +
-                    "&lat=" + latText +
-                    "&lon=" + lonText + "\"\r\n";
+                    "&temperature=" + temp +
+                    "&humidity=" + humi +
+                    "&latitude=" + latText +
+                    "&longitude=" + lonText + "\"\r\n";
 
   Serial.println(http_str);
   sendAT("AT+HTTPINIT", 2000, DEBUG);
   sendAT(http_str, 2000, DEBUG);
-  sendAT("AT+HTTPACTION=0", 3000, DEBUG);
+  sendAT("AT+HTTPACTION=0", 6000, DEBUG);
   sendAT("AT+HTTPTERM", 2000, DEBUG);
 
   delay(2000);
@@ -276,6 +275,41 @@ String createJsonString(int SyncWord, int TxPower, long freq, double interval)
 }
 
 String processGPSResponse(String response)
+{
+  Serial.println("\n----------   Start of processGPSResponse()   ----------\n");
+  Serial.println(response);
+  String result = "";
+
+  if (response.indexOf(",N") != -1)
+  {
+    int latStart = response.indexOf(":") + 2;  // Start after ": "
+    int latEnd = response.indexOf(",N");
+    int longStart = response.indexOf(",N") + 3;  // Start after ",N"
+    int longEnd = response.indexOf(",E");
+
+    String latitude = response.substring(latStart, latEnd);
+    String longitude = response.substring(longStart, longEnd);
+
+    float lat = convertCoordinate(latitude);
+    latText = String(lat, 6);
+    float lon = convertCoordinate(longitude);
+    lonText = String(lon, 6);
+
+    result = latText + "," + lonText;
+  }
+  else
+  {
+    int startIndex = response.indexOf(":") + 2;  // Start after ": "
+    int endIndex = response.indexOf(",");
+    String relevantInfo = response.substring(startIndex, endIndex);
+    relevantInfo.replace(",", "0");
+    result = relevantInfo;
+  }
+  Serial.println("\n----------   End of processGPSResponse()   ----------\n");
+  return result;
+}
+
+String processGNSSResponse(String response)
 {
   SerialMon.println("\n----------   Start of processGPSResponse()   ----------\n");
   Serial.println(response);
@@ -313,7 +347,7 @@ String processGPSResponse(String response)
   return result;
 }
 
-void connect2LTE()
+bool connect2LTE()
 {
   SerialMon.println("\n----------   Start of connect2LTE()   ----------\n");
   boolean DEBUG = 1;
@@ -326,12 +360,18 @@ void connect2LTE()
 
   delay(1000);
   sendAT("AT+CSOCKSETPN=1", 5000, DEBUG);
-  sendAT("AT+NETOPEN", 5000, DEBUG);
-  sendAT("AT+IPADDR", 5000, DEBUG);
+  String res = sendAT("AT+NETOPEN", 5000, DEBUG);
 
-  delay(1000);
+  if (res.indexOf("OK") == -1)
+  {
+    esp_restart();
+  }
+
+  String response = sendAT("AT+IPADDR", 5000, DEBUG);
+
   // sendAT("AT+CPING=\"rung.ddns.net\",1,4", 10000, DEBUG);
   SerialMon.println("\n----------   End of connect2LTE()   ----------\n");
+  return true;
 }
 
 void processJsonInput(const char *jsonInput)
@@ -350,6 +390,31 @@ void processJsonInput(const char *jsonInput)
   humi = doc["Humidity"];
 }
 
+void openGPS()
+{
+  for (int i = 0; i < 4; i++)
+  {
+    String response = sendAT("AT+CGNSSPWR=1", 1000, DEBUG);
+    sendAT("AT+CGPSINFO?", 1000, DEBUG);
+  }
+}
+
+void findGPS(float mintimeout) {
+  unsigned long findGPSstartTime = millis();
+  while ((millis() - findGPSstartTime) < (mintimeout * 60000)) {
+    unsigned long usedtime = (millis() - findGPSstartTime) / 1000; 
+    Serial.println("\n Used : " + String(usedtime) + " seconds \n");
+    gpsinfo = sendAT("AT+CGPSINFO", 1000, DEBUG);
+    if (gpsinfo.indexOf(",,,,,,,,") == -1 && gpsinfo.indexOf("ERROR") == -1) {
+      Serial.print(gpsinfo);
+      processGPSResponse(gpsinfo);
+      Serial.print("Used : " + String(usedtime) + " seconds to find GPS");
+      break;
+    }
+  }
+}
+
+
 void setup()
 {
   unsigned long startTime = millis();
@@ -367,6 +432,8 @@ void setup()
   Serial.println("LoRa Initializing OK!");
   modemPowerOn();
   delay(1000);
+  openGPS();
+  findGPS(1);
   connect2LTE();
 }
 
@@ -377,6 +444,8 @@ void loop()
   if (packetSize)
   {
     Serial.print("Received packet '");
+
+    
 
     char LoRaData[255];
     int dataIndex = 0;
@@ -420,30 +489,27 @@ void loop()
       LoRa.endPacket();
       processJsonInput(LoRaData);
 
-      for (int i = 0; i < 2; i++)
+      for (int i = 0; i < 5; i++)
       {
-        // Send the AT command to enable GNSS
-        String response = sendAT("AT+CGNSSPWR=1", 1000, DEBUG);
-
-        delay(2000); // Delay before the next command
-
-        // Send the AT command to retrieve GNSS info
         sendAT("AT+CGNSSINFO?", 1000, DEBUG);
-        gpsinfo = sendAT("AT+CGNSSINFO", 5000, DEBUG);
-
-        if (gpsinfo = ",,,,,,")
+        gpsinfo = sendAT("AT+CGPSINFO", 5000, DEBUG);
+        if (gpsinfo.indexOf(",,,,,,,,") == -1)
         {
-          readcellinfo();
-          sendrequest();
-        }
-        else
-        {
-          processGPSResponse(gpsinfo);
+          break;
         }
       }
-
-      request();
-      esp_restart();
+      if (gpsinfo.indexOf(",,,,,,,,") != -1)
+      {
+        readcellinfo();
+        sendrequest();
+        request();
+        esp_restart();
+      }
+      else
+      {
+        processGPSResponse(gpsinfo);
+        request();
+      }
     }
   }
 }
