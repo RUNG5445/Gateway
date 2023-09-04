@@ -35,7 +35,7 @@ String response, LoRaData, latText, lonText, gpsinfo;
 float temp;
 int humi;
 String NodeName;
-double sleepmin = 1;
+unsigned long startTime;
 
 // LoRa configuration
 int SyncWord;
@@ -125,34 +125,27 @@ float convertCoordinate(String coordString)
 
   if (coordString.length() > 10)
   {
-    // Extract degrees part
     String degreesString = coordString.substring(0, 3);
     int degreesValue = degreesString.toInt();
 
-    // Extract minutes part
     String minutesString = coordString.substring(3);
     float minutesValue = minutesString.toFloat();
 
-    // Calculate decimal degrees
     degrees = degreesValue + (minutesValue / 60.0);
   }
   else
   {
-    // Extract degrees part
     String degreesString = coordString.substring(0, 2);
     int degreesValue = degreesString.toInt();
 
-    // Extract minutes part
     String minutesString = coordString.substring(2);
     float minutesValue = minutesString.toFloat();
 
-    // Calculate decimal degrees
     degrees = degreesValue + (minutesValue / 60.0);
   }
 
-  // Print the converted value
   Serial.print("Decimal Degrees: ");
-  Serial.println(degrees, 6); // Print with 6 decimal places
+  Serial.println(degrees, 6);
   return degrees;
 }
 
@@ -240,7 +233,7 @@ void request()
   bool DEBUG = true;
   SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
 
-  String http_str = "AT+HTTPPARA=\"URL\",\"https://qr18o31mfb.execute-api.ap-southeast-1.amazonaws.com/data?"
+  String http_str = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/data?"
                     "nodename=" +
                     NodeName +
                     "&temperature=" + temp +
@@ -258,6 +251,44 @@ void request()
   SerialMon.println("\n----------   End of sendrequest()   ----------\n");
 }
 
+String getJsonConfig()
+{
+  bool DEBUG = true;
+  SerialMon.println("\n---------- Start of sendRequest() ----------\n");
+  String jsonConfig;
+
+  for (int i = 0; i < 5; i++)
+  {
+    if (jsonConfig.indexOf('{') != -1)
+    {
+      break;
+    }
+    String httpCommand = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/showconfig\"";
+
+    sendAT("AT+HTTPINIT", 3000, DEBUG);
+    sendAT(httpCommand, 3000, DEBUG);
+    sendAT("AT+HTTPACTION=0", 3000, DEBUG);
+    jsonConfig = sendAT("AT+HTTPREAD=0,500", 3000, DEBUG);
+    sendAT("AT+HTTPTERM", 2000, DEBUG);
+  }
+
+  String jsonPart;
+  int startPos = jsonConfig.indexOf('{');
+  int endPos = jsonConfig.lastIndexOf('}');
+
+  if (startPos != -1 && endPos != -1)
+  {
+    jsonPart = jsonConfig.substring(startPos, endPos + 1);
+    Serial.println(jsonPart);
+  }
+  else
+  {
+    Serial.println("JSON not found in the response.");
+  }
+
+  return jsonPart;
+}
+
 String createJsonString(int SyncWord, int TxPower, long freq, double interval)
 {
   Serial.println("\n----------   Start of createJsonString()   ----------\n");
@@ -265,12 +296,13 @@ String createJsonString(int SyncWord, int TxPower, long freq, double interval)
 
   doc["SyncWord"] = SyncWord;
   doc["TxPower"] = TxPower;
-  doc["freq"] = freq;
+  doc["freq"] = freq * 1000000;
   doc["interval"] = interval;
 
   String jsonString;
   serializeJson(doc, jsonString);
-  Serial.println("\n----------   End of createJsonString()   ----------\n");
+
+  Serial.println("\n---------- End of createJsonString() ----------\n");
   return jsonString;
 }
 
@@ -282,9 +314,9 @@ String processGPSResponse(String response)
 
   if (response.indexOf(",N") != -1)
   {
-    int latStart = response.indexOf(":") + 2;  // Start after ": "
+    int latStart = response.indexOf(":") + 2; // Start after ": "
     int latEnd = response.indexOf(",N");
-    int longStart = response.indexOf(",N") + 3;  // Start after ",N"
+    int longStart = response.indexOf(",N") + 3; // Start after ",N"
     int longEnd = response.indexOf(",E");
 
     String latitude = response.substring(latStart, latEnd);
@@ -299,7 +331,7 @@ String processGPSResponse(String response)
   }
   else
   {
-    int startIndex = response.indexOf(":") + 2;  // Start after ": "
+    int startIndex = response.indexOf(":") + 2; // Start after ": "
     int endIndex = response.indexOf(",");
     String relevantInfo = response.substring(startIndex, endIndex);
     relevantInfo.replace(",", "0");
@@ -347,6 +379,24 @@ String processGNSSResponse(String response)
   return result;
 }
 
+void getconfigfromJson(String jsonInput)
+{
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, jsonInput);
+
+  if (error)
+  {
+    Serial.print("Parsing failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  SyncWord = doc["Syncword"];
+  TxPower = doc["Tx_power"];
+  freq = doc["Frequency"];
+  interval = doc["Tx_Interval"];
+}
+
 bool connect2LTE()
 {
   SerialMon.println("\n----------   Start of connect2LTE()   ----------\n");
@@ -385,9 +435,30 @@ void processJsonInput(const char *jsonInput)
     Serial.println(error.c_str());
     return;
   }
+
   NodeName = doc["NodeName"].as<String>();
   temp = doc["Temperature"];
   humi = doc["Humidity"];
+}
+
+void sleep(float sec)
+{
+  Serial.println("\n----------   Start of sleep()   ----------\n");
+  double min_d = sec / 60;
+  // Set wakeup time
+  esp_sleep_enable_timer_wakeup((interval - min_d) * 60 * 0.8 * 1000000);
+
+  // Print the duration in minutes to the serial monitor
+  Serial.print("Duration: ");
+  Serial.print(sec / 60);
+  Serial.println(" minutes");
+
+  // Go to sleep now
+  Serial.print("Going to sleep for ");
+  Serial.print((interval - min_d) * 0.8);
+  Serial.println(" minutes");
+  Serial.println("\n----------   End of sleep()   ----------\n");
+  esp_deep_sleep_start();
 }
 
 void openGPS()
@@ -399,13 +470,16 @@ void openGPS()
   }
 }
 
-void findGPS(float mintimeout) {
+void findGPS(float mintimeout)
+{
   unsigned long findGPSstartTime = millis();
-  while ((millis() - findGPSstartTime) < (mintimeout * 60000)) {
-    unsigned long usedtime = (millis() - findGPSstartTime) / 1000; 
+  while ((millis() - findGPSstartTime) < (mintimeout * 60000))
+  {
+    unsigned long usedtime = (millis() - findGPSstartTime) / 1000;
     Serial.println("\n Used : " + String(usedtime) + " seconds \n");
     gpsinfo = sendAT("AT+CGPSINFO", 1000, DEBUG);
-    if (gpsinfo.indexOf(",,,,,,,,") == -1 && gpsinfo.indexOf("ERROR") == -1) {
+    if (gpsinfo.indexOf(",,,,,,,,") == -1 && gpsinfo.indexOf("ERROR") == -1)
+    {
       Serial.print(gpsinfo);
       processGPSResponse(gpsinfo);
       Serial.print("Used : " + String(usedtime) + " seconds to find GPS");
@@ -414,10 +488,9 @@ void findGPS(float mintimeout) {
   }
 }
 
-
 void setup()
 {
-  unsigned long startTime = millis();
+  startTime = millis();
   SerialMon.begin(UART_BAUD);
   SerialAT.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
 
@@ -431,10 +504,11 @@ void setup()
 
   Serial.println("LoRa Initializing OK!");
   modemPowerOn();
-  delay(1000);
+  delay(500);
   openGPS();
   findGPS(1);
   connect2LTE();
+  getconfigfromJson(getJsonConfig());
 }
 
 void loop()
@@ -444,8 +518,6 @@ void loop()
   if (packetSize)
   {
     Serial.print("Received packet '");
-
-    
 
     char LoRaData[255];
     int dataIndex = 0;
@@ -477,8 +549,9 @@ void loop()
     if (dataIndex > 0)
     {
       LoRaData[dataIndex] = '\0';
-      delay(3000);
-      String jsonOutput = createJsonString(241, 20, 923E6, 1);
+      delay(5000);
+
+      String jsonOutput = createJsonString(SyncWord, TxPower, freq, interval);
 
       Serial.println("Switching to sending state...");
       Serial.print("Packet send: ");
@@ -487,19 +560,27 @@ void loop()
       LoRa.beginPacket();
       LoRa.print(jsonOutput);
       LoRa.endPacket();
+      Serial.println("Packet sent.");
+
       processJsonInput(LoRaData);
 
       for (int i = 0; i < 5; i++)
       {
-        sendAT("AT+CGNSSINFO?", 1000, DEBUG);
-        gpsinfo = sendAT("AT+CGPSINFO", 5000, DEBUG);
+        sendAT("AT+CGNSSINFO?", 500, DEBUG);
+        Serial.println("Requesting GPS info...");
+        gpsinfo = sendAT("AT+CGPSINFO", 3000, DEBUG);
+        Serial.print("Received GPS info: ");
+        Serial.println(gpsinfo);
+
         if (gpsinfo.indexOf(",,,,,,,,") == -1)
         {
           break;
         }
       }
+
       if (gpsinfo.indexOf(",,,,,,,,") != -1)
       {
+        Serial.println("No valid GPS info, performing other actions...");
         readcellinfo();
         sendrequest();
         request();
@@ -510,6 +591,11 @@ void loop()
         processGPSResponse(gpsinfo);
         request();
       }
+      unsigned long endTime = millis();
+      unsigned long duration = endTime - startTime;
+      float durationSeconds = duration / 1000.0;
+
+      sleep(durationSeconds);
     }
   }
 }
