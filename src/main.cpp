@@ -490,7 +490,7 @@ void findGPS(float mintimeout)
 
 void setup()
 {
-  startTime = millis();
+  
   SerialMon.begin(UART_BAUD);
   SerialAT.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
 
@@ -513,6 +513,7 @@ void setup()
 
 void loop()
 {
+  startTime = millis();
   LoRa.setSyncWord(0xF1);
   int packetSize = LoRa.parsePacket();
   if (packetSize)
