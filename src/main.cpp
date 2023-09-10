@@ -13,6 +13,7 @@
 
 TinyGsmSim7600 modem(SerialAT);
 TinyGsmSim7600::GsmClientSim7600 client(modem);
+TinyGPSPlus gps;
 
 // Define Pin Configurations
 #define SerialAT Serial1
@@ -30,8 +31,6 @@ TinyGsmSim7600::GsmClientSim7600 client(modem);
 #define rst 14
 #define dio0 13
 #define apiKey (String) "pk.71031a62fba9814c0898ae766b971df1"
-
-TinyGPSPlus gps;
 
 // Global variables
 bool DEBUG = true;
