@@ -5,6 +5,8 @@
 #include <TinyGsmClientSIM7600.h> // Library for GSM communication using SIM7600 module
 #include <LoRa.h>                 // Library for LoRa communication
 #include <Wire.h>                 // I2C communication library
+#include <HardwareSerial.h>
+#include <TinyGPS++.h>
 
 #define SerialAT Serial1
 #define SerialMon Serial
@@ -29,9 +31,16 @@ TinyGsmSim7600::GsmClientSim7600 client(modem);
 #define dio0 13
 #define apiKey (String) "pk.71031a62fba9814c0898ae766b971df1"
 
+TinyGPSPlus gps;
+
 // Global variables
 bool DEBUG = true;
 String response, LoRaData, latText, lonText, gpsinfo;
+String serialres;
+String latitude, longitude;
+String extractedString = "";
+float degrees = 0.0;
+float lat, lon;
 float temp;
 int humi;
 String NodeName;
@@ -119,34 +128,152 @@ String sendAT(String command, int interval, boolean debug)
   return response;
 }
 
-float convertCoordinate(String coordString)
+float convertlatCoordinate(String coordString)
 {
-  float degrees = 0.0;
+  degrees = 0.0;
+  String degreesString = coordString.substring(0, 2);
+  int degreesValue = degreesString.toInt();
 
-  if (coordString.length() > 10)
+  String minutesString = coordString.substring(2);
+  float minutesValue = minutesString.toFloat();
+
+  degrees = degreesValue + (minutesValue / 60.0);
+
+  Serial.print("Latitude : ");
+  Serial.println(degrees, 6);
+  return degrees;
+}
+
+float convertlonCoordinate(String coordString)
+{
+  degrees = 0.0;
+  String degreesString = coordString.substring(0, 3);
+  int degreesValue = degreesString.toInt();
+
+  String minutesString = coordString.substring(3);
+  float minutesValue = minutesString.toFloat();
+
+  degrees = degreesValue + (minutesValue / 60.0);
+
+  Serial.print("Longtitude : ");
+  Serial.println(degrees, 6);
+  return degrees;
+}
+
+bool readgps(int interval)
+{
+  serialres = "";
+  lat = 0;
+  lon = 0;
+  long int startTime = millis();
+  while (((millis() - startTime)) < interval)
   {
-    String degreesString = coordString.substring(0, 3);
-    int degreesValue = degreesString.toInt();
+    while (Serial2.available() > 0)
+    {
+      int readData = Serial2.read();
+      serialres += char(readData);
+    }
+  }
+  Serial2.flush();
+  if (serialres.indexOf(",A") != -1 && serialres.indexOf("$GPRMC") != -1)
+  {
+    int startPos = serialres.indexOf("$GPRMC");
+    int endPos = serialres.indexOf("E", startPos);
+    extractedString = serialres.substring(startPos, endPos + 2);
+    Serial.println(extractedString);
+    // Find the positions of 'N,' and 'E,' in the input string
+    int nPos = serialres.indexOf("N,");
+    int ePos = serialres.indexOf("E,");
 
-    String minutesString = coordString.substring(3);
-    float minutesValue = minutesString.toFloat();
+    // Check if 'N,' and 'E,' were found in the input string
+    if (nPos != -1 && ePos != -1)
+    {
+      // Extract the latitude and longitude substrings
+      latitude = extractedString.substring(nPos - 11, nPos);
+      lat = convertlatCoordinate(latitude);
+      latText = String(lat, 6);
 
-    degrees = degreesValue + (minutesValue / 60.0);
+      longitude = extractedString.substring(ePos - 12, ePos);
+      lon = convertlonCoordinate(longitude);
+      lonText = String(lon, 6);
+      return true;
+    }
   }
   else
   {
-    String degreesString = coordString.substring(0, 2);
-    int degreesValue = degreesString.toInt();
+    return false;
+  }
+  return false;
+}
 
-    String minutesString = coordString.substring(2);
-    float minutesValue = minutesString.toFloat();
+void findGPS(float mintimeout)
+{
+  unsigned long findGPSstartTime = millis();
+  unsigned long timeoutMillis = mintimeout * 60000;
 
-    degrees = degreesValue + (minutesValue / 60.0);
+  while (millis() - findGPSstartTime < timeoutMillis)
+  {
+    lat = 0;
+    lon = 0;
+    unsigned long usedtime = (millis() - findGPSstartTime) / 1000;
+    // Serial.println("\nUsed : " + String(usedtime) + " seconds");
+
+    if (readgps(300) && lat > 13 && lat < 14 && lon > 100 && lon < 101)
+    {
+      // Serial.println("GPS found!");
+      // Serial.println("Used : " + String(usedtime) + " seconds to find GPS");
+      break;
+    }
+    else
+    {
+      // Serial.println("Finding GPS...");
+    }
+  }
+}
+
+float calculateAverage(float arrayofval[], int sizes)
+{
+  float sum = 0;
+
+  for (int i = 0; i < sizes; i++)
+  {
+    sum += arrayofval[i];
   }
 
-  Serial.print("Decimal Degrees: ");
-  Serial.println(degrees, 6);
-  return degrees;
+  return sum / sizes;
+}
+
+void GPSavg(int times)
+{
+  float latlist[times], lonlist[times];
+
+  for (int i = 0; i < times; i++)
+  {
+    Serial.print("\n------------------ ");
+    Serial.print(i);
+    Serial.println(" ------------------");
+    findGPS(1);
+    latlist[i] = lat;
+    lonlist[i] = lon;
+  }
+  latText = String(calculateAverage(latlist, times), 6);
+  lonText = String(calculateAverage(lonlist, times), 6);
+
+  Serial.print("\n------------------ ");
+  Serial.print("All values");
+  Serial.println(" ------------------");
+  for (int i = 0; i < 10; i++)
+  {
+    Serial.print("Latitude ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.print(String(latlist[i], 6));
+    Serial.print("  Longitude ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(String(lonlist[i], 6));
+  }
+  Serial.println("------------------------------------------------");
 }
 
 void readcellinfo()
@@ -306,79 +433,6 @@ String createJsonString(int SyncWord, int TxPower, long freq, double interval)
   return jsonString;
 }
 
-String processGPSResponse(String response)
-{
-  Serial.println("\n----------   Start of processGPSResponse()   ----------\n");
-  Serial.println(response);
-  String result = "";
-
-  if (response.indexOf(",N") != -1)
-  {
-    int latStart = response.indexOf(":") + 2; // Start after ": "
-    int latEnd = response.indexOf(",N");
-    int longStart = response.indexOf(",N") + 3; // Start after ",N"
-    int longEnd = response.indexOf(",E");
-
-    String latitude = response.substring(latStart, latEnd);
-    String longitude = response.substring(longStart, longEnd);
-
-    float lat = convertCoordinate(latitude);
-    latText = String(lat, 6);
-    float lon = convertCoordinate(longitude);
-    lonText = String(lon, 6);
-
-    result = latText + "," + lonText;
-  }
-  else
-  {
-    int startIndex = response.indexOf(":") + 2; // Start after ": "
-    int endIndex = response.indexOf(",");
-    String relevantInfo = response.substring(startIndex, endIndex);
-    relevantInfo.replace(",", "0");
-    result = relevantInfo;
-  }
-  Serial.println("\n----------   End of processGPSResponse()   ----------\n");
-  return result;
-}
-
-String processGNSSResponse(String response)
-{
-  SerialMon.println("\n----------   Start of processGPSResponse()   ----------\n");
-  Serial.println(response);
-  String result = "";
-
-  if (response.indexOf(",N") != -1)
-  {
-    int latStart = response.indexOf(",") + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    int longStart = response.indexOf(",", latStart) + 1;
-    longStart = response.indexOf(",", longStart) + 1;
-
-    String latitude = response.substring(latStart, response.indexOf(",", latStart));
-    String longitude = response.substring(longStart, response.indexOf(",", longStart));
-
-    float lat = convertCoordinate(latitude);
-    latText = String(lat, 6);
-    float lon = convertCoordinate(longitude);
-    lonText = String(lon, 6);
-
-    result = latText + "," + lonText;
-  }
-  else
-  {
-    int startIndex = response.indexOf(",") + 1;
-    int endIndex = response.lastIndexOf(",");
-    String relevantInfo = response.substring(startIndex, endIndex);
-    relevantInfo.replace(",", "0");
-    result = relevantInfo;
-  }
-  SerialMon.println("\n----------   End of processGPSResponse()   ----------\n");
-  return result;
-}
-
 void getconfigfromJson(String jsonInput)
 {
   StaticJsonDocument<512> doc;
@@ -461,38 +515,12 @@ void sleep(float sec)
   esp_deep_sleep_start();
 }
 
-void openGPS()
-{
-  for (int i = 0; i < 4; i++)
-  {
-    String response = sendAT("AT+CGNSSPWR=1", 1000, DEBUG);
-    sendAT("AT+CGPSINFO?", 1000, DEBUG);
-  }
-}
-
-void findGPS(float mintimeout)
-{
-  unsigned long findGPSstartTime = millis();
-  while ((millis() - findGPSstartTime) < (mintimeout * 60000))
-  {
-    unsigned long usedtime = (millis() - findGPSstartTime) / 1000;
-    Serial.println("\n Used : " + String(usedtime) + " seconds \n");
-    gpsinfo = sendAT("AT+CGPSINFO", 1000, DEBUG);
-    if (gpsinfo.indexOf(",,,,,,,,") == -1 && gpsinfo.indexOf("ERROR") == -1)
-    {
-      Serial.print(gpsinfo);
-      processGPSResponse(gpsinfo);
-      Serial.print("Used : " + String(usedtime) + " seconds to find GPS");
-      break;
-    }
-  }
-}
-
 void setup()
 {
   startTime = millis();
   SerialMon.begin(UART_BAUD);
   SerialAT.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
+  Serial2.begin(9600, SERIAL_8N1, 32, 33);
 
   LoRa.setPins(ss, rst, dio0);
   LoRa.setSyncWord(0xF1);
@@ -505,10 +533,9 @@ void setup()
   Serial.println("LoRa Initializing OK!");
   modemPowerOn();
   delay(500);
-  openGPS();
-  findGPS(1);
+  GPSavg(10);
   connect2LTE();
-  getconfigfromJson(getJsonConfig());
+  // getconfigfromJson(getJsonConfig());
 }
 
 void loop()
@@ -563,33 +590,22 @@ void loop()
       Serial.println("Packet sent.");
 
       processJsonInput(LoRaData);
+      Serial.print(latText);
+      Serial.print(lonText);
+      float latValue = latText.toFloat();
+      float lonValue = lonText.toFloat();
 
-      for (int i = 0; i < 5; i++)
+      if (latValue > 13 && lonValue > 100)
       {
-        sendAT("AT+CGNSSINFO?", 500, DEBUG);
-        Serial.println("Requesting GPS info...");
-        gpsinfo = sendAT("AT+CGPSINFO", 3000, DEBUG);
-        Serial.print("Received GPS info: ");
-        Serial.println(gpsinfo);
-
-        if (gpsinfo.indexOf(",,,,,,,,") == -1)
-        {
-          break;
-        }
+        request();
       }
-
-      if (gpsinfo.indexOf(",,,,,,,,") != -1)
+      else
       {
         Serial.println("No valid GPS info, performing other actions...");
         readcellinfo();
         sendrequest();
         request();
         esp_restart();
-      }
-      else
-      {
-        processGPSResponse(gpsinfo);
-        request();
       }
       unsigned long endTime = millis();
       unsigned long duration = endTime - startTime;
