@@ -38,11 +38,11 @@ String response, LoRaData, latText, lonText, gpsinfo;
 String serialres;
 String latitude, longitude;
 String extractedString = "";
+String NodeName;
 float degrees = 0.0;
 float lat, lon;
 float temp;
 int humi;
-String NodeName;
 unsigned long startTime;
 
 // LoRa configuration
@@ -103,9 +103,7 @@ void modemPowerOn()
 String sendAT(String command, int interval, boolean debug)
 {
   String response = "";
-
   SerialAT.println(command);
-
   long int startTime = millis();
 
   while (((millis() - startTime)) < interval)
@@ -116,7 +114,6 @@ String sendAT(String command, int interval, boolean debug)
       response += char(readData);
     }
   }
-
   SerialAT.flush();
 
   if (debug)
@@ -370,10 +367,10 @@ void request()
   Serial.println(http_str);
   sendAT("AT+HTTPINIT", 2000, DEBUG);
   sendAT(http_str, 2000, DEBUG);
-  sendAT("AT+HTTPACTION=0", 6000, DEBUG);
+  sendAT("AT+HTTPACTION=0", 3000, DEBUG);
   sendAT("AT+HTTPTERM", 2000, DEBUG);
 
-  delay(2000);
+  delay(1000);
   SerialMon.println("\n----------   End of sendrequest()   ----------\n");
 }
 
