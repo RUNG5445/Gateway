@@ -41,8 +41,7 @@ String extractedString = "";
 String NodeName;
 float degrees = 0.0;
 float lat, lon;
-float temp;
-int humi;
+float temp, humi;
 unsigned long startTime;
 
 // LoRa configuration
