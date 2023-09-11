@@ -29,9 +29,10 @@ float temp;
 int humi;
 String NodeName;
 double sleepmin = 1;
+int packetRssi;
 
 // LoRa configuration
-int SyncWord ;
+int SyncWord;
 int TxPower;
 long freq;
 double interval;
@@ -88,155 +89,90 @@ String sendAT(String command, int interval, boolean debug)
   return response;
 }
 
-float convertCoordinate(String coordString)
+bool lorafind()
 {
-  float degrees = 0.0;
-
-  if (coordString.length() > 10)
+  while (true)
   {
-    // Extract degrees part
-    String degreesString = coordString.substring(0, 3);
-    int degreesValue = degreesString.toInt();
+    int packetSize = LoRa.parsePacket();
+    // Serial.print("00000");
+    if (packetSize)
+    {
+      Serial.print("Received packet '");
 
-    // Extract minutes part
-    String minutesString = coordString.substring(3);
-    float minutesValue = minutesString.toFloat();
+      char LoRaData[255];
+      int dataIndex = 0;
 
-    // Calculate decimal degrees
-    degrees = degreesValue + (minutesValue / 60.0);
+      while (LoRa.available())
+      {
+        char receivedChar = LoRa.read();
+        Serial.print(receivedChar);
+
+        LoRaData[dataIndex] = receivedChar;
+        dataIndex++;
+
+        if (dataIndex >= sizeof(LoRaData) - 1)
+        {
+          LoRaData[dataIndex] = '\0';
+          break;
+        }
+
+        if (dataIndex == 1 && receivedChar != '{')
+        {
+          dataIndex = 0;
+          break;
+        }
+      }
+
+      Serial.print("' with RSSI ");
+      Serial.println(LoRa.packetRssi());
+
+      if (dataIndex > 0)
+      {
+        LoRaData[dataIndex] = '\0';
+        packetRssi = LoRa.packetRssi();
+        return true;
+      }
+    }
   }
-  else
-  {
-    // Extract degrees part
-    String degreesString = coordString.substring(0, 2);
-    int degreesValue = degreesString.toInt();
-
-    // Extract minutes part
-    String minutesString = coordString.substring(2);
-    float minutesValue = minutesString.toFloat();
-
-    // Calculate decimal degrees
-    degrees = degreesValue + (minutesValue / 60.0);
-  }
-
-  // Print the converted value
-  Serial.print("Decimal Degrees: ");
-  Serial.println(degrees, 6); // Print with 6 decimal places
-  return degrees;
 }
 
-void request()
+float calculateAverage(int arrayofval[], int sizes)
 {
+  float sum = 0;
 
-  bool DEBUG = true;
-  SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
-
-  String http_str = "AT+HTTPPARA=\"URL\",\"https://portal.preproject.site:5000/insert_data?"
-                    "NodeName=" + NodeName +
-                    "&temp=" + temp +
-                    "&humi=" + humi +
-                    "&lat=" + latText +
-                    "&lon=" + lonText + "\"\r\n";
-
-  Serial.println(http_str);
-  sendAT("AT+HTTPINIT", 2000, DEBUG);
-  sendAT(http_str, 2000, DEBUG);
-  sendAT("AT+HTTPACTION=0", 3000, DEBUG);
-  sendAT("AT+HTTPTERM", 2000, DEBUG);
-
-  delay(2000);
-  SerialMon.println("\n----------   End of sendrequest()   ----------\n");
-}
-
-String createJsonString(int SyncWord,int TxPower,long freq,double interval)
-{
-  Serial.println("\n----------   Start of createJsonString()   ----------\n");
-  StaticJsonDocument<512> doc;
-
-  doc["SyncWord"] = SyncWord;
-  doc["TxPower"] = TxPower;
-  doc["freq"] = freq;
-  doc["interval"] = interval;
-
-  String jsonString;
-  serializeJson(doc, jsonString);
-  Serial.println("\n----------   End of createJsonString()   ----------\n");
-  return jsonString;
-}
-
-String processGPSResponse(String response)
-{
-  SerialMon.println("\n----------   Start of processGPSResponse()   ----------\n");
-  Serial.println(response);
-  String result = "";
-
-  if (response.indexOf(",N") != -1)
+  for (int i = 0; i < sizes; i++)
   {
-    int latStart = response.indexOf(",") + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    latStart = response.indexOf(",", latStart) + 1;
-    int longStart = response.indexOf(",", latStart) + 1;
-    longStart = response.indexOf(",", longStart) + 1;
-
-    String latitude = response.substring(latStart, response.indexOf(",", latStart));
-    String longitude = response.substring(longStart, response.indexOf(",", longStart));
-
-    float lat = convertCoordinate(latitude);
-    latText = String(lat, 6);
-    float lon = convertCoordinate(longitude);
-    lonText = String(lon, 6);
-
-    result = latText + "," + lonText;
+    sum += arrayofval[i];
   }
-  else
-  {
-    int startIndex = response.indexOf(",") + 1;
-    int endIndex = response.lastIndexOf(",");
-    String relevantInfo = response.substring(startIndex, endIndex);
-    relevantInfo.replace(",", "0");
-    result = relevantInfo;
-  }
-  SerialMon.println("\n----------   End of processGPSResponse()   ----------\n");
-  return result;
+
+  return sum / sizes;
 }
 
-void connect2LTE()
+float sniavg(int times)
 {
-  SerialMon.println("\n----------   Start of connect2LTE()   ----------\n");
-  boolean DEBUG = 1;
+  int Rssi[times];
 
-  delay(1000);
-  sendAT("AT+NETCLOSE", 1000, DEBUG);
-
-  delay(1000);
-  sendAT("AT+CPIN?", 2000, DEBUG);
-
-  delay(1000);
-  sendAT("AT+CSOCKSETPN=1", 5000, DEBUG);
-  sendAT("AT+NETOPEN", 5000, DEBUG);
-  sendAT("AT+IPADDR", 5000, DEBUG);
-
-  delay(1000);
-  // sendAT("AT+CPING=\"rung.ddns.net\",1,4", 10000, DEBUG);
-  SerialMon.println("\n----------   End of connect2LTE()   ----------\n");
-}
-
-void processJsonInput(const char *jsonInput)
-{
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, jsonInput);
-
-  if (error)
+  for (int i = 0; i < times; i++)
   {
-    Serial.print("Parsing failed: ");
-    Serial.println(error.c_str());
-    return;
+    Serial.println("\n-------------------------------------------------------------------------------------------------------------");
+    Serial.print("\nPacket #");
+    Serial.println(i + 1);
+
+    if (lorafind())
+    {
+      Rssi[i] = packetRssi;
+    }
   }
-  NodeName = doc["NodeName"].as<String>();
-  temp = doc["Temperature"];
-  humi = doc["Humidity"];
+  float rssiavg = calculateAverage(Rssi, times);
+  Serial.println("\n----------------------------------------------- All values -------------------------------------------------");
+  for (int i = 0; i < times; i++)
+  {
+    Serial.print("RSSI Test # ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.println(Rssi[i]);
+  }
+  return rssiavg;
 }
 
 void setup()
@@ -254,85 +190,17 @@ void setup()
   }
 
   Serial.println("LoRa Initializing OK!");
-  modemPowerOn();
   delay(1000);
-  connect2LTE();
-
 }
 
 void loop()
 {
+  Serial.println("RSSI Test");
   LoRa.setSyncWord(0xF1);
-  int packetSize = LoRa.parsePacket();
-  if (packetSize)
-  {
-    Serial.print("Received packet '");
+  float RSSI = sniavg(10);
+  Serial.println("-----------------------------------------------------------------------------------------------------------------");
+  Serial.print("Average of RSSI : ");
+  Serial.println(RSSI);
 
-    char LoRaData[255];
-    int dataIndex = 0;
-
-    while (LoRa.available())
-    {
-      char receivedChar = LoRa.read();
-      Serial.print(receivedChar);
-
-      LoRaData[dataIndex] = receivedChar;
-      dataIndex++;
-
-      if (dataIndex >= sizeof(LoRaData) - 1)
-      {
-        LoRaData[dataIndex] = '\0';
-        break;
-      }
-
-      if (dataIndex == 1 && receivedChar != '{')
-      {
-        dataIndex = 0;
-        break;
-      }
-    }
-
-    Serial.print("' with RSSI ");
-    Serial.println(LoRa.packetRssi());
-
-    if (dataIndex > 0)
-    {
-      LoRaData[dataIndex] = '\0';
-      delay(3000);
-      String jsonOutput = createJsonString(241,20,923E6,1);
-
-      Serial.println("Switching to sending state...");
-      Serial.print("Packet send: ");
-      Serial.println(jsonOutput);
-      LoRa.setSyncWord(0xF2);
-      LoRa.beginPacket();
-      LoRa.print(jsonOutput);
-      LoRa.endPacket();
-      processJsonInput(LoRaData);
-
-      // for (int i = 0; i < 2; i++)
-      // {
-      //   // Send the AT command to enable GNSS
-      //   String response = sendAT("AT+CGNSSPWR=1", 1000, DEBUG);
-
-      //   delay(2000); // Delay before the next command
-
-      //   // Send the AT command to retrieve GNSS info
-      //   sendAT("AT+CGNSSINFO?", 1000, DEBUG);
-      //   gpsinfo = sendAT("AT+CGNSSINFO", 5000, DEBUG);
-
-      //   delay(1000); // Delay before the next iteration
-      // }
-
-      processGPSResponse(gpsinfo);
-
-      
-
-      request();
-      // esp_restart();
-    }
-
-
-
-  }
+  Serial.println("\n\n\n");
 }
