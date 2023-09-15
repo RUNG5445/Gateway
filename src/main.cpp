@@ -172,7 +172,7 @@ void GPSavg(int times)
 void setup()
 {
   Serial.begin(115200);
-  Serial2.begin(9600, SERIAL_8N1, 14, 15);
+  Serial2.begin(9600, SERIAL_8N1, 32, 33);
   delay(1000);
 }
 void loop()
