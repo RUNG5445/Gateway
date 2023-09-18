@@ -22,9 +22,9 @@ double interval;
 // LoRa test configuration
 long freq = 923E6;
 int SyncWord = 0xF1;
-int spreadingFactor = 7;
+int spreadingFactor = 12;
 long signalBandwidth = 125E3;
-int trialtimes = 10;
+int trialtimes = 20;
 
 bool lorafind()
 {
@@ -46,21 +46,21 @@ bool lorafind()
         LoRaData[dataIndex] = receivedChar;
         dataIndex++;
 
-        if (dataIndex >= sizeof(LoRaData) - 1)
-        {
-          LoRaData[dataIndex] = '\0';
-          break;
-        }
+        //   if (dataIndex >= sizeof(LoRaData) - 1)
+        //   {
+        //     LoRaData[dataIndex] = '\0';
+        //     break;
+        //   }
 
-        if (dataIndex == 1 && receivedChar != '{')
-        {
-          dataIndex = 0;
-          break;
-        }
+        //   if (dataIndex == 1 && receivedChar != '{')
+        //   {
+        //     dataIndex = 0;
+        //     break;
+        //   }
       }
 
       Serial.print("' with RSSI ");
-      Serial.println(LoRa.packetRssi());
+      Serial.print(LoRa.packetRssi());
 
       if (dataIndex > 0)
       {
@@ -90,9 +90,10 @@ float sniavg(int times)
 
   for (int i = 0; i < times; i++)
   {
-    Serial.println("\n-------------------------------------------------------------------------------------------------------------");
+    // Serial.println("\n-------------------------------------------------------------------------------------------------------------");
     Serial.print("\nPacket #");
-    Serial.println(i + 1);
+    Serial.print(i + 1);
+    Serial.print(" ");
 
     if (lorafind())
     {
@@ -113,6 +114,7 @@ float sniavg(int times)
 
 void setup()
 {
+  delay(5000);
   unsigned long startTime = millis();
   SerialMon.begin(UART_BAUD);
 
@@ -126,6 +128,7 @@ void setup()
   LoRa.setSyncWord(SyncWord);
   LoRa.setSpreadingFactor(spreadingFactor);
   LoRa.setSignalBandwidth(signalBandwidth);
+  LoRa.enableCrc();
 
   // Initialize LoRa module
   Serial.print("SyncWord: ");
