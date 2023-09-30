@@ -45,9 +45,28 @@ float temp, humi;
 unsigned long startTime;
 
 // LoRa configuration
-int SyncWord;
-int TxPower;
-long freq;
+RTC_DATA_ATTR int gSyncWord;
+RTC_DATA_ATTR int gTxPower;
+RTC_DATA_ATTR long gfreq;
+RTC_DATA_ATTR double ginterval;
+RTC_DATA_ATTR int gspreadingFactor;
+RTC_DATA_ATTR long gsignalBandwidth;
+
+// Default LoRa Gateway configuration
+int dgSyncWord = 0xF1;
+int dgTxPower = 20;
+int dgspreadingFactor = 9;
+long dgfreq = 923E6;
+long dgsignalBandwidth = 125E3;
+double dginterval = 3;
+
+// End devices LoRa configuration
+int eSyncWord;
+int eTxPower;
+int espreadingFactor;
+long efreq;
+long esignalBandwidth;
+
 double interval;
 int sendSyncWord = 5;
 
@@ -201,27 +220,21 @@ bool readgps(int interval)
   return false;
 }
 
-void findGPS(float mintimeout)
+void waitForGPSFix(float timeoutMinutes)
 {
-  unsigned long findGPSstartTime = millis();
-  unsigned long timeoutMillis = mintimeout * 60000;
+  unsigned long startTime = millis();
+  unsigned long timeoutMillis = timeoutMinutes * 60000;
 
-  while (millis() - findGPSstartTime < timeoutMillis)
+  while (millis() - startTime < timeoutMillis)
   {
     lat = 0;
     lon = 0;
-    unsigned long usedtime = (millis() - findGPSstartTime) / 1000;
-    // Serial.println("\nUsed : " + String(usedtime) + " seconds");
+    unsigned long elapsedTime = (millis() - startTime) / 1000;
 
     if (readgps(300) && lat > 13 && lat < 14 && lon > 100 && lon < 101)
     {
-      // Serial.println("GPS found!");
-      // Serial.println("Used : " + String(usedtime) + " seconds to find GPS");
+      // GPS fix found
       break;
-    }
-    else
-    {
-      // Serial.println("Finding GPS...");
     }
   }
 }
@@ -238,26 +251,26 @@ float calculateAverage(float arrayofval[], int sizes)
   return sum / sizes;
 }
 
-void GPSavg(int times)
+void GPSavg(int attemps)
 {
-  float latlist[times], lonlist[times];
+  float latlist[attemps], lonlist[attemps];
 
-  for (int i = 0; i < times; i++)
+  for (int i = 0; i < attemps; i++)
   {
     Serial.print("\n------------------ ");
-    Serial.print(i);
+    Serial.print(i + 1);
     Serial.println(" ------------------");
-    findGPS(1);
+    waitForGPSFix(1);
     latlist[i] = lat;
     lonlist[i] = lon;
   }
-  latText = String(calculateAverage(latlist, times), 6);
-  lonText = String(calculateAverage(lonlist, times), 6);
+  latText = String(calculateAverage(latlist, attemps), 6);
+  lonText = String(calculateAverage(lonlist, attemps), 6);
 
   Serial.print("\n------------------ ");
   Serial.print("All values");
   Serial.println(" ------------------");
-  for (int i = 0; i < 10; i++)
+  for (int i = 0; i < attemps; i++)
   {
     Serial.print("Latitude ");
     Serial.print(i);
@@ -314,9 +327,9 @@ void readcellinfo()
   SerialMon.println("\n----------   End of readcellinfo()   ----------\n");
 }
 
-void sendrequest()
+void sendLocationRequest()
 {
-  SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
+  SerialMon.println("\n----------   Start of sendLocationRequest()   ----------\n");
   String payload = "{\"token\":\"" + apiKey + "\",\"radio\":\"lte\",\"mcc\":" + networkinfo.mcc + ",\"mnc\":" + networkinfo.mnc + ",\"cells\":[{\"lac\":" + networkinfo.lac + ",\"cid\":" + networkinfo.cid + ",\"psc\":0}],\"address\":1}";
   String response;
   client.connect("ap1.unwiredlabs.com", 80);
@@ -347,13 +360,13 @@ void sendrequest()
   lonText = response.substring(startIndex, endIndex);
   Serial.println("Latitude: " + latText);
   Serial.println("Longitude: " + lonText);
-  SerialMon.println("\n----------   End of sendrequest()   ----------\n");
+  SerialMon.println("\n----------   End of sendLocationRequest()   ----------\n");
 }
 
-void request()
+void sendHttpRequest()
 {
   bool DEBUG = true;
-  SerialMon.println("\n----------   Start of sendrequest()   ----------\n");
+  SerialMon.println("\n----------   Start of sendHttpRequest()   ----------\n");
 
   String http_str = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/data?"
                     "nodename=" +
@@ -370,13 +383,13 @@ void request()
   sendAT("AT+HTTPTERM", 2000, DEBUG);
 
   delay(1000);
-  SerialMon.println("\n----------   End of sendrequest()   ----------\n");
+  SerialMon.println("\n----------   End of sendHttpRequest()   ----------\n");
 }
 
-String getJsonConfig()
+String fetchJsonConfig()
 {
   bool DEBUG = true;
-  SerialMon.println("\n---------- Start of sendRequest() ----------\n");
+  SerialMon.println("\n---------- Start of fetchJsonConfig() ----------\n");
   String jsonConfig;
 
   for (int i = 0; i < 5; i++)
@@ -407,8 +420,56 @@ String getJsonConfig()
   {
     Serial.println("JSON not found in the response.");
   }
-
+  SerialMon.println("\n---------- End of fetchJsonConfig() ----------\n");
   return jsonPart;
+}
+
+void changelora(String jsonInput)
+{
+  Serial.print(jsonInput);
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, jsonInput);
+  if (error)
+  {
+    Serial.print("Parsing failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  if (eSyncWord != gSyncWord)
+  {
+    gSyncWord = eSyncWord;
+    Serial.println(gSyncWord);
+    Serial.println("SyncWord changed");
+  }
+  if (eTxPower != gTxPower)
+  {
+    gTxPower = eTxPower;
+    Serial.println("TxPower changed");
+  }
+  if (efreq * 1000000 != gfreq)
+  {
+    gfreq = efreq * 1000000;
+    Serial.println("TxPower changed");
+  }
+  if (ginterval != interval)
+  {
+    ginterval = interval;
+    Serial.println("interval changed");
+  }
+
+  Serial.print("\nSyncWord: ");
+  Serial.println(gSyncWord, HEX);
+  Serial.print("TxPower: ");
+  Serial.println(gTxPower);
+  Serial.print("Frequency: ");
+  Serial.println(gfreq);
+  Serial.print("Interval: ");
+  Serial.println(ginterval);
+  Serial.print("SpreadingFactor: ");
+  Serial.println(gspreadingFactor);
+  Serial.print("SignalBandwidth: ");
+  Serial.println(gsignalBandwidth);
 }
 
 String createJsonString(int SyncWord, int TxPower, long freq, double interval)
@@ -425,10 +486,11 @@ String createJsonString(int SyncWord, int TxPower, long freq, double interval)
   serializeJson(doc, jsonString);
 
   Serial.println("\n---------- End of createJsonString() ----------\n");
+
   return jsonString;
 }
 
-void getconfigfromJson(String jsonInput)
+void parseJsonConfig(String jsonInput)
 {
   StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, jsonInput);
@@ -437,13 +499,19 @@ void getconfigfromJson(String jsonInput)
   {
     Serial.print("Parsing failed: ");
     Serial.println(error.c_str());
+    eSyncWord = dgSyncWord;
+    eTxPower = dgTxPower;
+    efreq = dgfreq;
+    interval = dginterval;
     return;
   }
 
-  SyncWord = doc["Syncword"];
-  TxPower = doc["Tx_power"];
-  freq = doc["Frequency"];
+  eSyncWord = doc["Syncword"];
+  eTxPower = doc["Tx_power"];
+  efreq = doc["Frequency"];
   interval = doc["Tx_Interval"];
+
+  changelora(jsonInput);
 }
 
 bool connect2LTE()
@@ -461,7 +529,7 @@ bool connect2LTE()
   sendAT("AT+CSOCKSETPN=1", 5000, DEBUG);
   String res = sendAT("AT+NETOPEN", 5000, DEBUG);
 
-  if (res.indexOf("OK") == -1)
+  if (res.indexOf("OK") == -1 || res.indexOf("not") != -1)
   {
     esp_restart();
   }
@@ -475,6 +543,7 @@ bool connect2LTE()
 
 void processJsonInput(const char *jsonInput)
 {
+  SerialMon.println("\n----------   Start of processJsonInput()   ----------\n");
   StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, jsonInput);
 
@@ -488,6 +557,7 @@ void processJsonInput(const char *jsonInput)
   NodeName = doc["NodeName"].as<String>();
   temp = doc["Temperature"];
   humi = doc["Humidity"];
+  SerialMon.println("\n----------   End of processJsonInput()   ----------\n");
 }
 
 void sleep(float sec)
@@ -495,7 +565,7 @@ void sleep(float sec)
   Serial.println("\n----------   Start of sleep()   ----------\n");
   double min_d = sec / 60;
   // Set wakeup time
-  esp_sleep_enable_timer_wakeup((interval - min_d) * 60 * 0.8 * 1000000);
+  esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.8 * 1000000);
 
   // Print the duration in minutes to the serial monitor
   Serial.print("Duration: ");
@@ -504,7 +574,7 @@ void sleep(float sec)
 
   // Go to sleep now
   Serial.print("Going to sleep for ");
-  Serial.print((interval - min_d) * 0.8);
+  Serial.print((ginterval - min_d) * 0.8);
   Serial.println(" minutes");
   Serial.println("\n----------   End of sleep()   ----------\n");
   esp_deep_sleep_start();
@@ -512,30 +582,62 @@ void sleep(float sec)
 
 void setup()
 {
+  SerialMon.println("\n----------   Start of Setup   ----------\n");
   startTime = millis();
-  SerialMon.begin(UART_BAUD);
-  SerialAT.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
+  Serial.begin(UART_BAUD);
+  Serial1.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
   Serial2.begin(9600, SERIAL_8N1, 32, 33);
-
   LoRa.setPins(ss, rst, dio0);
-  LoRa.setSyncWord(0xF1);
-  while (!LoRa.begin(923E6))
+
+  if (gSyncWord == 0 || gTxPower == 0 || gfreq == 0 || ginterval == 0)
+  {
+    gSyncWord = dgSyncWord;
+    gTxPower = dgTxPower;
+    gfreq = dgfreq;
+    gspreadingFactor = dgspreadingFactor;
+    gsignalBandwidth = dgsignalBandwidth;
+    ginterval = dginterval;
+    Serial.println("No value use default");
+  }
+  while (!LoRa.begin(gfreq))
   {
     Serial.println(".");
     delay(500);
   }
 
-  Serial.println("LoRa Initializing OK!");
+  LoRa.setTxPower(gTxPower);
+  LoRa.setSyncWord(gSyncWord);
+  LoRa.setSpreadingFactor(gspreadingFactor);
+  LoRa.setSignalBandwidth(gsignalBandwidth);
+  LoRa.enableCrc();
+
+  // Show LoRa module configuraion
+  Serial.print("\nSyncWord: ");
+  Serial.println(gSyncWord, HEX);
+  Serial.print("TxPower: ");
+  Serial.println(gTxPower);
+  Serial.print("Frequency: ");
+  Serial.println(gfreq);
+  Serial.print("Interval: ");
+  Serial.println(ginterval);
+  Serial.print("SpreadingFactor: ");
+  Serial.println(gspreadingFactor);
+  Serial.print("SignalBandwidth: ");
+  Serial.println(gsignalBandwidth);
+
+  Serial.println("\nLoRa Initialized!\n");
+
   modemPowerOn();
   delay(500);
-  GPSavg(10);
+  GPSavg(0);
   connect2LTE();
-  // getconfigfromJson(getJsonConfig());
+  parseJsonConfig(fetchJsonConfig());
+  SerialMon.println("\n----------   End of Setup   ----------\n");
+  SerialMon.println("\nWaiting for Data\n");
 }
 
 void loop()
 {
-  LoRa.setSyncWord(0xF1);
   int packetSize = LoRa.parsePacket();
   if (packetSize)
   {
@@ -573,12 +675,12 @@ void loop()
       LoRaData[dataIndex] = '\0';
       delay(5000);
 
-      String jsonOutput = createJsonString(SyncWord, TxPower, freq, interval);
+      String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, interval);
 
       Serial.println("Switching to sending state...");
       Serial.print("Packet send: ");
       Serial.println(jsonOutput);
-      LoRa.setSyncWord(0xF2);
+      LoRa.setSyncWord(0XF2);
       LoRa.beginPacket();
       LoRa.print(jsonOutput);
       LoRa.endPacket();
@@ -592,15 +694,15 @@ void loop()
 
       if (latValue > 13 && lonValue > 100)
       {
-        request();
+        sendHttpRequest();
       }
       else
       {
         Serial.println("No valid GPS info, performing other actions...");
         readcellinfo();
-        sendrequest();
-        request();
-        esp_restart();
+        sendLocationRequest();
+        sendHttpRequest();
+        // esp_restart();
       }
       unsigned long endTime = millis();
       unsigned long duration = endTime - startTime;
