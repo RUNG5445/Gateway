@@ -424,8 +424,9 @@ String fetchJsonConfig()
   return jsonPart;
 }
 
-void changelora(String jsonInput)
+void changeGWconfig(String jsonInput)
 {
+  Serial.println("\n----------   Start of changeGWconfig()   ----------\n");
   Serial.print(jsonInput);
   StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, jsonInput);
@@ -457,8 +458,8 @@ void changelora(String jsonInput)
     ginterval = interval;
     Serial.println("interval changed");
   }
-
-  Serial.print("\nSyncWord: ");
+  Serial.println("\n\nLoRa Gateway Configuration ( changeGWconfig() )\n");
+  Serial.print("SyncWord: ");
   Serial.println(gSyncWord, HEX);
   Serial.print("TxPower: ");
   Serial.println(gTxPower);
@@ -470,6 +471,7 @@ void changelora(String jsonInput)
   Serial.println(gspreadingFactor);
   Serial.print("SignalBandwidth: ");
   Serial.println(gsignalBandwidth);
+  Serial.println("\n----------   End of changeGWconfig()   ----------\n");
 }
 
 String createJsonString(int SyncWord, int TxPower, long freq, double interval)
@@ -492,6 +494,7 @@ String createJsonString(int SyncWord, int TxPower, long freq, double interval)
 
 void parseJsonConfig(String jsonInput)
 {
+  SerialMon.println("\n----------   Start of parseJsonConfig()   ----------\n");
   StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, jsonInput);
 
@@ -511,7 +514,8 @@ void parseJsonConfig(String jsonInput)
   efreq = doc["Frequency"];
   interval = doc["Tx_Interval"];
 
-  changelora(jsonInput);
+  changeGWconfig(jsonInput);
+  SerialMon.println("\n----------   End of parseJsonConfig()   ----------\n");
 }
 
 bool connect2LTE()
@@ -612,7 +616,8 @@ void setup()
   LoRa.enableCrc();
 
   // Show LoRa module configuraion
-  Serial.print("\nSyncWord: ");
+  Serial.println("\nLoRa Gateway Configuration\n");
+  Serial.print("SyncWord: ");
   Serial.println(gSyncWord, HEX);
   Serial.print("TxPower: ");
   Serial.println(gTxPower);
@@ -625,7 +630,7 @@ void setup()
   Serial.print("SignalBandwidth: ");
   Serial.println(gsignalBandwidth);
 
-  Serial.println("\nLoRa Initialized!\n");
+  Serial.println("\n\nLoRa Initialized!\n");
 
   modemPowerOn();
   delay(500);
