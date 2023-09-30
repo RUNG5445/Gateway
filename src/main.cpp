@@ -710,9 +710,5 @@ void loop()
 
       sleep(durationSeconds);
     }
-    delay(100);
   }
-
-  connect2LTE();
-  request();
 }
