@@ -1,11 +1,10 @@
 // Gateway
 
 #include <Arduino.h>
+#include <HardwareSerial.h>
 #include <ArduinoJson.h>          // JSON library for Arduino
 #include <TinyGsmClientSIM7600.h> // Library for GSM communication using SIM7600 module
 #include <LoRa.h>                 // Library for LoRa communication
-#include <Wire.h>                 // I2C communication library
-#include <HardwareSerial.h>
 #include <TinyGPS++.h>
 
 #define SerialAT Serial1
