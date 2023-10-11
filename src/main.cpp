@@ -248,18 +248,6 @@ void waitForGPSFix(float timeoutMinutes)
   }
 }
 
-float calculateAverage(float arrayofval[], int sizes)
-{
-  float sum = 0;
-
-  for (int i = 0; i < sizes; i++)
-  {
-    sum += arrayofval[i];
-  }
-
-  return sum / sizes;
-}
-
 void GPSavg(int attemps)
 {
   float latlist[attemps], lonlist[attemps];
@@ -273,8 +261,8 @@ void GPSavg(int attemps)
     latlist[i] = lat;
     lonlist[i] = lon;
   }
-  latText = String(calculateAverage(latlist, attemps), 6);
-  lonText = String(calculateAverage(lonlist, attemps), 6);
+  latText = String(latlist[attemps / 2], 6);
+  lonText = String(lonlist[attemps / 2], 6);
 
   Serial.print("\n------------------ ");
   Serial.print("All values");
@@ -754,7 +742,7 @@ void loop()
       }
     }
   }
-  if (waitingtime > (0.1 * 60 * 1000) + 5000)
+  if (waitingtime > (0.5 * 60 * 1000) + 5000)
   {
     SerialMon.println(waitingtime);
     recvall = true;
