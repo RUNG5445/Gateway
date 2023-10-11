@@ -378,7 +378,6 @@ void sendHttpRequest()
   SerialMon.println("\n----------   Start of sendHttpRequest()   ----------\n");
   for (int i = 0; i < enddevices_num; i++)
   {
-    Serial.println(i);
     String http_str = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/data?"
                       "nodename=" +
                       NodeName[i] +
