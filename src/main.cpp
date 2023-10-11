@@ -14,6 +14,16 @@ TinyGsmSim7600 modem(SerialAT);
 TinyGsmSim7600::GsmClientSim7600 client(modem);
 TinyGPSPlus gps;
 
+bool recvall = false;
+
+// Define End devices
+String enddeviceslist[] = {"Node1", "Node1"};
+const int enddevices_num = sizeof(enddeviceslist) / sizeof(enddeviceslist[0]);
+int node = 0;
+
+// Define End devices
+String requesturllist[500];
+
 // Define Pin Configurations
 #define SerialAT Serial1
 #define SerialMon Serial
@@ -37,11 +47,11 @@ String response, LoRaData, latText, lonText, gpsinfo;
 String serialres;
 String latitude, longitude;
 String extractedString = "";
-String NodeName;
+String NodeName[16 * enddevices_num];
 float degrees = 0.0;
 float lat, lon;
-float temp, humi;
-unsigned long startTime;
+float temp[16 * enddevices_num], humi[16 * enddevices_num];
+unsigned long startTime, waitingtime;
 
 // LoRa configuration
 RTC_DATA_ATTR int gSyncWord;
@@ -366,21 +376,23 @@ void sendHttpRequest()
 {
   bool DEBUG = true;
   SerialMon.println("\n----------   Start of sendHttpRequest()   ----------\n");
+  for (int i = 0; i < enddevices_num; i++)
+  {
+    Serial.println(i);
+    String http_str = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/data?"
+                      "nodename=" +
+                      NodeName[i] +
+                      "&temperature=" + temp[i] +
+                      "&humidity=" + humi[i] +
+                      "&latitude=" + latText +
+                      "&longitude=" + lonText + "\"\r\n";
 
-  String http_str = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/data?"
-                    "nodename=" +
-                    NodeName +
-                    "&temperature=" + temp +
-                    "&humidity=" + humi +
-                    "&latitude=" + latText +
-                    "&longitude=" + lonText + "\"\r\n";
-
-  Serial.println(http_str);
-  sendAT("AT+HTTPINIT", 2000, DEBUG);
-  sendAT(http_str, 2000, DEBUG);
-  sendAT("AT+HTTPACTION=0", 3000, DEBUG);
-  sendAT("AT+HTTPTERM", 2000, DEBUG);
-
+    Serial.println(http_str);
+    sendAT("AT+HTTPINIT", 2000, DEBUG);
+    sendAT(http_str, 2000, DEBUG);
+    sendAT("AT+HTTPACTION=0", 3000, DEBUG);
+    sendAT("AT+HTTPTERM", 2000, DEBUG);
+  }
   delay(1000);
   SerialMon.println("\n----------   End of sendHttpRequest()   ----------\n");
 }
@@ -477,10 +489,46 @@ String createJsonString(int SyncWord, int TxPower, long freq, double interval)
 {
   Serial.println("\n----------   Start of createJsonString()   ----------\n");
   StaticJsonDocument<512> doc;
+  if (gSyncWord == 0 || gTxPower == 0 || gfreq == 0 || ginterval == 0)
+  {
+    gSyncWord = dgSyncWord;
+    gTxPower = dgTxPower;
+    gfreq = dgfreq;
+    gspreadingFactor = dgspreadingFactor;
+    gsignalBandwidth = dgsignalBandwidth;
+    ginterval = dginterval;
+    Serial.println("\n\nNo value use default");
+  }
+
+  if (SyncWord == 0)
+  {
+    SyncWord = dgSyncWord;
+  }
+  if (TxPower == 0)
+  {
+    TxPower = dgTxPower;
+  }
+  if (freq == 0)
+  {
+    freq = dgfreq;
+  }
+  if (interval == 0)
+  {
+    interval = dginterval;
+  }
 
   doc["SyncWord"] = SyncWord;
   doc["TxPower"] = TxPower;
-  doc["freq"] = freq * 1000000;
+
+  if (freq < 1000)
+  {
+    doc["freq"] = freq * 1000000;
+  }
+  else
+  {
+    doc["freq"] = freq;
+  }
+
   doc["interval"] = interval;
 
   String jsonString;
@@ -534,7 +582,7 @@ bool connect2LTE()
 
   if (res.indexOf("OK") == -1 || res.indexOf("not") != -1)
   {
-    esp_restart();
+    // esp_restart();
   }
 
   String response = sendAT("AT+IPADDR", 5000, DEBUG);
@@ -544,7 +592,7 @@ bool connect2LTE()
   return true;
 }
 
-void processJsonInput(const char *jsonInput)
+String processJsonInput(const char *jsonInput, int index)
 {
   SerialMon.println("\n----------   Start of processJsonInput()   ----------\n");
   StaticJsonDocument<512> doc;
@@ -554,13 +602,14 @@ void processJsonInput(const char *jsonInput)
   {
     Serial.print("Parsing failed: ");
     Serial.println(error.c_str());
-    return;
+    // return;
   }
 
-  NodeName = doc["NodeName"].as<String>();
-  temp = doc["Temperature"];
-  humi = doc["Humidity"];
+  NodeName[index] = doc["NodeName"].as<String>();
+  temp[index] = doc["Temperature"];
+  humi[index] = doc["Humidity"];
   SerialMon.println("\n----------   End of processJsonInput()   ----------\n");
+  return NodeName[index];
 }
 
 void sleep(float sec)
@@ -600,7 +649,7 @@ void setup()
     gspreadingFactor = dgspreadingFactor;
     gsignalBandwidth = dgsignalBandwidth;
     ginterval = dginterval;
-    Serial.println("No value use default");
+    Serial.println("\n\nNo value use default");
   }
   while (!LoRa.begin(gfreq))
   {
@@ -634,14 +683,16 @@ void setup()
   modemPowerOn();
   delay(500);
   GPSavg(0);
-  connect2LTE();
-  parseJsonConfig(fetchJsonConfig());
+  // connect2LTE();
+  // parseJsonConfig(fetchJsonConfig());
   SerialMon.println("\n----------   End of Setup   ----------\n");
   SerialMon.println("\nWaiting for Data\n");
 }
 
 void loop()
 {
+  waitingtime = millis();
+  SerialMon.println(waitingtime);
   int packetSize = LoRa.parsePacket();
   if (packetSize)
   {
@@ -677,6 +728,7 @@ void loop()
     if (dataIndex > 0)
     {
       LoRaData[dataIndex] = '\0';
+
       delay(5000);
 
       String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, interval);
@@ -690,29 +742,49 @@ void loop()
       LoRa.endPacket();
       Serial.println("Packet sent.");
 
-      processJsonInput(LoRaData);
-      Serial.print(latText);
-      Serial.print(lonText);
-      float latValue = latText.toFloat();
-      float lonValue = lonText.toFloat();
-
-      if (latValue > 13 && lonValue > 100)
+      String recvnode = processJsonInput(LoRaData, node);
+      if (recvnode == enddeviceslist[node])
       {
-        sendHttpRequest();
+        Serial.println("Successfully receieved data from " + enddeviceslist[node]);
+        node = node + 1;
       }
-      else
+      if (node == enddevices_num)
       {
-        Serial.println("No valid GPS info, performing other actions...");
-        readcellinfo();
-        sendLocationRequest();
-        sendHttpRequest();
-        // esp_restart();
+        recvall = true;
+        Serial.println("Successfully received data from all nodes.");
       }
-      unsigned long endTime = millis();
-      unsigned long duration = endTime - startTime;
-      float durationSeconds = duration / 1000.0;
-
-      sleep(durationSeconds);
     }
+  }
+  if (waitingtime > (0.1 * 60 * 1000) + 5000)
+  {
+    SerialMon.println(waitingtime);
+    recvall = true;
+  }
+
+  if (recvall)
+  {
+
+    Serial.print(latText);
+    Serial.print(lonText);
+    float latValue = latText.toFloat();
+    float lonValue = lonText.toFloat();
+
+    if (latValue > 13 && lonValue > 100)
+    {
+      sendHttpRequest();
+    }
+    else
+    {
+      Serial.println("No valid GPS info, performing other actions...");
+      readcellinfo();
+      sendLocationRequest();
+      sendHttpRequest();
+      // esp_restart();
+    }
+    unsigned long endTime = millis();
+    unsigned long duration = endTime - startTime;
+    float durationSeconds = duration / 1000.0;
+
+    sleep(durationSeconds);
   }
 }

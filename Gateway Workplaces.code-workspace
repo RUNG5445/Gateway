@@ -4,5 +4,14 @@
       "name": "Gateway",
       "path": "."
     }
-  ]
+  ],
+  "settings": {
+    "files.associations": {
+      "vector": "cpp",
+      "array": "cpp",
+      "string_view": "cpp",
+      "initializer_list": "cpp",
+      "utility": "cpp"
+    }
+  }
 }
