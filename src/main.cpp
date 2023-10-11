@@ -742,7 +742,7 @@ void loop()
       }
     }
   }
-  if (waitingtime > (0.5 * 60 * 1000) + 5000)
+  if (waitingtime > (1 * 60 * 1000) + 5000)
   {
     SerialMon.println(waitingtime);
     recvall = true;
