@@ -716,19 +716,6 @@ void loop()
     {
       LoRaData[dataIndex] = '\0';
 
-      delay(5000);
-
-      String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, interval);
-
-      Serial.println("Switching to sending state...");
-      Serial.print("Packet send: ");
-      Serial.println(jsonOutput);
-      LoRa.setSyncWord(0XF2);
-      LoRa.beginPacket();
-      LoRa.print(jsonOutput);
-      LoRa.endPacket();
-      Serial.println("Packet sent.");
-
       String recvnode = processJsonInput(LoRaData, node);
       if (recvnode == enddeviceslist[node])
       {
@@ -739,6 +726,19 @@ void loop()
       {
         recvall = true;
         Serial.println("Successfully received data from all nodes.");
+
+        delay(5000);
+
+        String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, interval);
+
+        Serial.println("Switching to sending state...");
+        Serial.print("Packet send: ");
+        Serial.println(jsonOutput);
+        LoRa.setSyncWord(0XF2);
+        LoRa.beginPacket();
+        LoRa.print(jsonOutput);
+        LoRa.endPacket();
+        Serial.println("Packet sent.");
       }
     }
   }
