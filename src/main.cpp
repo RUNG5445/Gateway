@@ -14,15 +14,14 @@ TinyGsmSim7600 modem(SerialAT);
 TinyGsmSim7600::GsmClientSim7600 client(modem);
 TinyGPSPlus gps;
 
-bool recvall = false;
+// Define API URI
+String URI = "rung.ddns.net:8088/";
 
-// Define End devices
-String enddeviceslist[] = {"Node1", "Node1"};
+// Define End devices list
+String enddeviceslist[] = {"Node1", "Node2"};
 const int enddevices_num = sizeof(enddeviceslist) / sizeof(enddeviceslist[0]);
 int node = 0;
-
-// Define End devices
-String requesturllist[500];
+bool recvall = false;
 
 // Define Pin Configurations
 #define SerialAT Serial1
@@ -366,9 +365,8 @@ void sendHttpRequest()
   SerialMon.println("\n----------   Start of sendHttpRequest()   ----------\n");
   for (int i = 0; i < enddevices_num; i++)
   {
-    String http_str = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/data?"
-                      "nodename=" +
-                      NodeName[i] +
+    String http_str = "AT+HTTPPARA=\"URL\",\"" + URI + "data?" +
+                      "nodename=" + NodeName[i] +
                       "&temperature=" + temp[i] +
                       "&humidity=" + humi[i] +
                       "&latitude=" + latText +
@@ -396,7 +394,7 @@ String fetchJsonConfig()
     {
       break;
     }
-    String httpCommand = "AT+HTTPPARA=\"URL\",\"https://tuz1jwn73m.execute-api.ap-southeast-1.amazonaws.com/showconfig\"";
+    String httpCommand = "AT+HTTPPARA=\"URL\",\"" + URI + "showconfig\"";
 
     sendAT("AT+HTTPINIT", 3000, DEBUG);
     sendAT(httpCommand, 3000, DEBUG);
@@ -569,7 +567,7 @@ bool connect2LTE()
 
   if (res.indexOf("OK") == -1 || res.indexOf("not") != -1)
   {
-    // esp_restart();
+    esp_restart();
   }
 
   String response = sendAT("AT+IPADDR", 5000, DEBUG);
@@ -669,9 +667,9 @@ void setup()
 
   modemPowerOn();
   delay(500);
-  GPSavg(0);
-  // connect2LTE();
-  // parseJsonConfig(fetchJsonConfig());
+  GPSavg(1);
+  connect2LTE();
+  parseJsonConfig(fetchJsonConfig());
   SerialMon.println("\n----------   End of Setup   ----------\n");
   SerialMon.println("\nWaiting for Data\n");
 }
@@ -679,7 +677,7 @@ void setup()
 void loop()
 {
   waitingtime = millis();
-  SerialMon.println(waitingtime);
+  // SerialMon.println(waitingtime);
   int packetSize = LoRa.parsePacket();
   if (packetSize)
   {
@@ -742,7 +740,7 @@ void loop()
       }
     }
   }
-  if (waitingtime > (1 * 60 * 1000) + 5000)
+  if (waitingtime > (1 * 60 * 1000) + 100000)
   {
     SerialMon.println(waitingtime);
     recvall = true;
