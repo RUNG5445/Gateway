@@ -74,6 +74,7 @@ int eTxPower;
 int espreadingFactor;
 long efreq;
 long esignalBandwidth;
+double einterval;
 
 double interval;
 int sendSyncWord = 5;
@@ -491,14 +492,14 @@ void changeGWconfig(String jsonInput)
     gTxPower = eTxPower;
     Serial.println("TxPower changed");
   }
-  if (efreq * 1000000 != gfreq)
+  if (efreq != gfreq)
   {
     gfreq = efreq * 1000000;
-    Serial.println("TxPower changed");
+    Serial.println("Freq changed");
   }
-  if (ginterval != interval)
+  if (einterval != ginterval)
   {
-    ginterval = interval;
+    ginterval = einterval;
     Serial.println("interval changed");
   }
   Serial.println("\n\nLoRa Gateway Configuration ( changeGWconfig() )\n");
@@ -588,10 +589,12 @@ void parseJsonConfig(String jsonInput)
     return;
   }
 
-  eSyncWord = doc["Syncword"];
-  eTxPower = doc["Tx_power"];
-  efreq = doc["Frequency"];
-  interval = doc["Tx_Interval"];
+  eSyncWord = doc["SyncWord"];
+  eTxPower = doc["TxPower"];
+  efreq = doc["freq"];
+  einterval = doc["interval"];
+
+  Serial.print(efreq);
 
   changeGWconfig(jsonInput);
   SerialMon.println("\n----------   End of parseJsonConfig()   ----------\n");
@@ -649,7 +652,7 @@ void sleep(float sec)
   Serial.println("\n----------   Start of sleep()   ----------\n");
   double min_d = sec / 60;
   // Set wakeup time
-  esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.8 * 1000000);
+  esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.7 * 1000000);
 
   // Print the duration in minutes to the serial monitor
   Serial.print("Duration: ");
@@ -714,7 +717,7 @@ void setup()
 
   modemPowerOn();
   delay(500);
-  GPSavg(1);
+  GPSavg(0);
   connect2LTE();
   parseJsonConfig(fetchJsonConfig());
   SerialMon.println("\n----------   End of Setup   ----------\n");
@@ -774,7 +777,7 @@ void loop()
 
         delay(5000);
 
-        String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, interval);
+        String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, einterval);
 
         Serial.println("Switching to sending state...");
         Serial.print("Packet send: ");
@@ -787,7 +790,7 @@ void loop()
       }
     }
   }
-  if (waitingtime > (1 * 60 * 1000) + 100000)
+  if (waitingtime > (einterval * 60 * 1000) + 120000)
   {
     SerialMon.println(waitingtime);
     recvall = true;
@@ -809,7 +812,7 @@ void loop()
     {
       Serial.println("No valid GPS info, performing other actions...");
       readcellinfo();
-      sendLocationRequest();
+      // sendLocationRequest();
       sendHttpRequest();
     }
     unsigned long endTime = millis();
