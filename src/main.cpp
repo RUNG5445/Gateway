@@ -15,7 +15,7 @@ TinyGsmSim7600::GsmClientSim7600 client(modem);
 TinyGPSPlus gps;
 
 // Define API URI
-String URI = "rung.ddns.net:8088/";
+String URI = "http://rung.ddns.net:8088/";
 
 // Define End devices list
 String enddeviceslist[] = {"Node1", "Node2"};
@@ -363,20 +363,54 @@ void sendHttpRequest()
 {
   bool DEBUG = true;
   SerialMon.println("\n----------   Start of sendHttpRequest()   ----------\n");
+
   for (int i = 0; i < enddevices_num; i++)
   {
-    String http_str = "AT+HTTPPARA=\"URL\",\"" + URI + "data?" +
-                      "nodename=" + NodeName[i] +
-                      "&temperature=" + temp[i] +
-                      "&humidity=" + humi[i] +
-                      "&latitude=" + latText +
-                      "&longitude=" + lonText + "\"\r\n";
+    unsigned long startTime = millis();
+    unsigned long timeout = 10000;
 
-    Serial.println(http_str);
-    sendAT("AT+HTTPINIT", 2000, DEBUG);
-    sendAT(http_str, 2000, DEBUG);
-    sendAT("AT+HTTPACTION=0", 3000, DEBUG);
-    sendAT("AT+HTTPTERM", 2000, DEBUG);
+    // Create a JSON object with key-value pairs
+    String payload = "{";
+    payload += "\"nodename\":\"" + NodeName[i] + "\",";
+    payload += "\"temperature\":" + String(temp[i]) + ",";
+    payload += "\"humidity\":" + String(humi[i]) + ",";
+    payload += "\"latitude\":" + String(latText) + ",";
+    payload += "\"longitude\":" + String(lonText);
+    payload += "}";
+
+    String response;
+    client.connect("rung.ddns.net", 8088);
+    String request = "POST /api/data HTTP/1.1\r\n";
+    request += "Host: rung.ddns.net\r\n";
+    request += "Content-Type: application/json\r\n";
+    request += "Content-Length: ";
+    request += String(payload.length());
+    request += "\r\n\r\n";
+    request += payload;
+    Serial.println(request);
+    client.print(request);
+
+    while (client.connected() && (millis() - startTime) < timeout)
+    {
+      while (client.available())
+      {
+        char c = client.read();
+        response += c;
+        client.write(c);
+      }
+    }
+
+    String successMessage = "Data inserted successfully";
+
+    if (response.indexOf(successMessage) != -1)
+    {
+      Serial.println("\nData was inserted successfully");
+    }
+    else
+    {
+      Serial.println("\nData was not inserted");
+    }
+    client.stop();
   }
   delay(1000);
   SerialMon.println("\n----------   End of sendHttpRequest()   ----------\n");
@@ -384,40 +418,53 @@ void sendHttpRequest()
 
 String fetchJsonConfig()
 {
-  bool DEBUG = true;
-  SerialMon.println("\n---------- Start of fetchJsonConfig() ----------\n");
-  String jsonConfig;
+  Serial.println("\n----------   Start of fetchJsonConfig()   ----------\n");
+  String response;
 
-  for (int i = 0; i < 5; i++)
+  if (client.connect("rung.ddns.net", 8088))
   {
-    if (jsonConfig.indexOf('{') != -1)
+    String request = "GET /api/showconfig HTTP/1.1\r\n";
+    request += "Host: rung.ddns.net\r\n";
+    request += "\r\n";
+    client.print(request);
+
+    unsigned long startTime = millis();
+
+    while (client.connected() && (millis() - startTime) < 5000)
     {
-      break;
+      while (client.available())
+      {
+        char c = client.read();
+        response += c;
+        Serial.write(c);
+      }
     }
-    String httpCommand = "AT+HTTPPARA=\"URL\",\"" + URI + "showconfig\"";
+    client.stop();
 
-    sendAT("AT+HTTPINIT", 3000, DEBUG);
-    sendAT(httpCommand, 3000, DEBUG);
-    sendAT("AT+HTTPACTION=0", 3000, DEBUG);
-    jsonConfig = sendAT("AT+HTTPREAD=0,500", 3000, DEBUG);
-    sendAT("AT+HTTPTERM", 2000, DEBUG);
-  }
+    Serial.println("Response =" + response);
 
-  String jsonPart;
-  int startPos = jsonConfig.indexOf('{');
-  int endPos = jsonConfig.lastIndexOf('}');
+    int start = response.indexOf('{');
+    int end = response.lastIndexOf('}');
 
-  if (startPos != -1 && endPos != -1)
-  {
-    jsonPart = jsonConfig.substring(startPos, endPos + 1);
-    Serial.println(jsonPart);
+    if (start != -1 && end != -1 && end > start)
+    {
+      String jsonPart = response.substring(start, end + 1);
+      Serial.println("\nExtracted JSON: " + jsonPart);
+      return jsonPart;
+    }
+    else
+    {
+      Serial.println("JSON not found in the response.");
+      return "";
+    }
   }
   else
   {
-    Serial.println("JSON not found in the response.");
+    Serial.println("Failed to connect to the server");
+    return "";
   }
-  SerialMon.println("\n---------- End of fetchJsonConfig() ----------\n");
-  return jsonPart;
+
+  Serial.println("\n----------   End of fetchJsonConfig()   ----------\n");
 }
 
 void changeGWconfig(String jsonInput)
@@ -677,7 +724,7 @@ void setup()
 void loop()
 {
   waitingtime = millis();
-  // SerialMon.println(waitingtime);
+
   int packetSize = LoRa.parsePacket();
   if (packetSize)
   {
@@ -764,7 +811,6 @@ void loop()
       readcellinfo();
       sendLocationRequest();
       sendHttpRequest();
-      // esp_restart();
     }
     unsigned long endTime = millis();
     unsigned long duration = endTime - startTime;
