@@ -15,7 +15,8 @@ TinyGsmSim7600::GsmClientSim7600 client(modem);
 TinyGPSPlus gps;
 
 // Define API URI
-String URI = "http://rung.ddns.net:8088/";
+String URI = "http://rung.ddns.net:8050/";
+int PORT = 8050;
 
 // Define End devices list
 String enddeviceslist[] = {"Node1", "Node2"};
@@ -50,7 +51,7 @@ String NodeName[16 * enddevices_num];
 float degrees = 0.0;
 float lat, lon;
 float temp[16 * enddevices_num], humi[16 * enddevices_num];
-unsigned long startTime, waitingtime;
+unsigned long setupstartTime, waitingtime, setupendtime, setuptime;
 
 // LoRa configuration
 RTC_DATA_ATTR int gSyncWord;
@@ -380,7 +381,7 @@ void sendHttpRequest()
     payload += "}";
 
     String response;
-    client.connect("rung.ddns.net", 8088);
+    client.connect("rung.ddns.net", PORT);
     String request = "POST /api/data HTTP/1.1\r\n";
     request += "Host: rung.ddns.net\r\n";
     request += "Content-Type: application/json\r\n";
@@ -421,65 +422,60 @@ String fetchJsonConfig()
 {
   Serial.println("\n----------   Start of fetchJsonConfig()   ----------\n");
   String response;
+  int maxRetries = 5; // Maximum number of retries
 
-  if (client.connect("rung.ddns.net", 8088))
+  for (int retry = 1; retry <= maxRetries; retry++)
   {
-    String request = "GET /api/showconfig HTTP/1.1\r\n";
-    request += "Host: rung.ddns.net\r\n";
-    request += "\r\n";
-    client.print(request);
-
-    unsigned long startTime = millis();
-
-    while (client.connected() && (millis() - startTime) < 5000)
+    if (client.connect("rung.ddns.net", PORT))
     {
-      while (client.available())
+      String request = "GET /api/showconfig HTTP/1.1\r\n";
+      request += "Host: rung.ddns.net\r\n";
+      request += "\r\n";
+      client.print(request);
+
+      unsigned long startTime = millis();
+
+      while (client.connected() && (millis() - startTime) < 10000)
       {
-        char c = client.read();
-        response += c;
-        Serial.write(c);
+        while (client.available())
+        {
+          char c = client.read();
+          response += c;
+          Serial.write(c);
+        }
       }
-    }
-    client.stop();
+      client.stop();
+      delay(1000);
+      Serial.println("Response =" + response);
 
-    Serial.println("Response =" + response);
+      int start = response.indexOf('{');
+      int end = response.lastIndexOf('}');
 
-    int start = response.indexOf('{');
-    int end = response.lastIndexOf('}');
-
-    if (start != -1 && end != -1 && end > start)
-    {
-      String jsonPart = response.substring(start, end + 1);
-      Serial.println("\nExtracted JSON: " + jsonPart);
-      return jsonPart;
+      if (start != -1 && end != -1 && end > start)
+      {
+        String jsonPart = response.substring(start, end + 1);
+        Serial.println("\nExtracted JSON: " + jsonPart);
+        return jsonPart;
+      }
+      else
+      {
+        Serial.println("JSON not found in the response (Retry " + String(retry) + " of " + String(maxRetries) + ").");
+        response = ""; // Clear the response for the next attempt.
+      }
     }
     else
     {
-      Serial.println("JSON not found in the response.");
-      return "";
+      Serial.println("Failed to connect to the server (Retry " + String(retry) + " of " + String(maxRetries) + ").");
     }
   }
-  else
-  {
-    Serial.println("Failed to connect to the server");
-    return "";
-  }
 
-  Serial.println("\n----------   End of fetchJsonConfig()   ----------\n");
+  Serial.println("\nReached maximum number of retries. Exiting fetchJsonConfig()\n");
+  return "";
 }
 
-void changeGWconfig(String jsonInput)
+void changeGWconfig()
 {
   Serial.println("\n----------   Start of changeGWconfig()   ----------\n");
-  Serial.print(jsonInput);
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, jsonInput);
-  if (error)
-  {
-    Serial.print("Parsing failed: ");
-    Serial.println(error.c_str());
-    return;
-  }
 
   if (eSyncWord != gSyncWord)
   {
@@ -589,14 +585,18 @@ void parseJsonConfig(String jsonInput)
     return;
   }
 
-  eSyncWord = doc["SyncWord"];
-  eTxPower = doc["TxPower"];
-  efreq = doc["freq"];
-  einterval = doc["interval"];
+  eSyncWord = doc["Syncword"];
+  eTxPower = doc["Tx_power"];
+  efreq = doc["Frequency"];
+  if (efreq < 1000000)
+  {
+    efreq = efreq * 1000000;
+  }
+  einterval = doc["Tx_interval"];
 
   Serial.print(efreq);
 
-  changeGWconfig(jsonInput);
+  changeGWconfig();
   SerialMon.println("\n----------   End of parseJsonConfig()   ----------\n");
 }
 
@@ -652,7 +652,7 @@ void sleep(float sec)
   Serial.println("\n----------   Start of sleep()   ----------\n");
   double min_d = sec / 60;
   // Set wakeup time
-  esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.7 * 1000000);
+  esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.8 * 1000000);
 
   // Print the duration in minutes to the serial monitor
   Serial.print("Duration: ");
@@ -670,7 +670,7 @@ void sleep(float sec)
 void setup()
 {
   SerialMon.println("\n----------   Start of Setup   ----------\n");
-  startTime = millis();
+  setupstartTime = millis();
   Serial.begin(UART_BAUD);
   Serial1.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
   Serial2.begin(9600, SERIAL_8N1, 32, 33);
@@ -722,10 +722,13 @@ void setup()
   parseJsonConfig(fetchJsonConfig());
   SerialMon.println("\n----------   End of Setup   ----------\n");
   SerialMon.println("\nWaiting for Data\n");
+  setupendtime = millis();
+  setuptime = setupendtime - setupstartTime;
 }
 
 void loop()
 {
+
   waitingtime = millis();
 
   int packetSize = LoRa.parsePacket();
@@ -790,7 +793,7 @@ void loop()
       }
     }
   }
-  if (waitingtime > (einterval * 60 * 1000) + 120000)
+  if (waitingtime > (ginterval * 60 * 1000) + setuptime)
   {
     SerialMon.println(waitingtime);
     recvall = true;
@@ -812,13 +815,13 @@ void loop()
     {
       Serial.println("No valid GPS info, performing other actions...");
       readcellinfo();
-      // sendLocationRequest();
+      sendLocationRequest();
       sendHttpRequest();
     }
     unsigned long endTime = millis();
-    unsigned long duration = endTime - startTime;
+    unsigned long duration = endTime - waitingtime + setuptime;
     float durationSeconds = duration / 1000.0;
-
+    changeGWconfig();
     sleep(durationSeconds);
   }
 }
