@@ -52,6 +52,8 @@ float degrees = 0.0;
 float lat, lon;
 float temp[16 * enddevices_num], humi[16 * enddevices_num];
 unsigned long setupstartTime, waitingtime, setupendtime, setuptime;
+double speed = -1;
+bool speedcheck;
 
 // LoRa configuration
 RTC_DATA_ATTR int gSyncWord;
@@ -195,6 +197,7 @@ bool readgps(int interval)
     while (Serial2.available() > 0)
     {
       int readData = Serial2.read();
+      gps.encode(readData);
       serialres += char(readData);
     }
   }
@@ -377,7 +380,15 @@ void sendHttpRequest()
     payload += "\"temperature\":" + String(temp[i]) + ",";
     payload += "\"humidity\":" + String(humi[i]) + ",";
     payload += "\"latitude\":" + String(latText) + ",";
-    payload += "\"longitude\":" + String(lonText);
+    payload += "\"longitude\":" + String(lonText) + ",";
+    if (speedcheck == true)
+    {
+      payload += "\"speed\":" + String(speed);
+    }
+    else
+    {
+      payload += "\"speed\":null";
+    }
     payload += "}";
 
     String response;
@@ -460,7 +471,7 @@ String fetchJsonConfig()
       else
       {
         Serial.println("JSON not found in the response (Retry " + String(retry) + " of " + String(maxRetries) + ").");
-        response = ""; // Clear the response for the next attempt.
+        response = ""; // Clear the response for the next attempt
       }
     }
     else
@@ -654,12 +665,11 @@ void sleep(float sec)
   // Set wakeup time
   esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.8 * 1000000);
 
-  // Print the duration in minutes to the serial monitor
   Serial.print("Duration: ");
   Serial.print(sec / 60);
   Serial.println(" minutes");
 
-  // Go to sleep now
+  // Go to sleep
   Serial.print("Going to sleep for ");
   Serial.print((ginterval - min_d) * 0.8);
   Serial.println(" minutes");
@@ -717,9 +727,10 @@ void setup()
 
   modemPowerOn();
   delay(500);
-  GPSavg(0);
+  GPSavg(1);
   connect2LTE();
   parseJsonConfig(fetchJsonConfig());
+
   SerialMon.println("\n----------   End of Setup   ----------\n");
   SerialMon.println("\nWaiting for Data\n");
   setupendtime = millis();
@@ -809,11 +820,17 @@ void loop()
 
     if (latValue > 13 && lonValue > 100)
     {
+      GPSavg(5);
+      Serial.print("Speed in km/h = ");
+      speed = gps.speed.kmph();
+      Serial.println(speed);
+      speedcheck = true;
       sendHttpRequest();
     }
     else
     {
       Serial.println("No valid GPS info, performing other actions...");
+      speedcheck = false;
       readcellinfo();
       sendLocationRequest();
       sendHttpRequest();
