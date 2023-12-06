@@ -20,7 +20,7 @@ int PORT = 8050;
 
 // Define End devices list
 String enddeviceslist[] = {"Node1", "Node2"};
-const int enddevices_num = sizeof(enddeviceslist) / sizeof(enddeviceslist[0]);
+int enddevices_num = sizeof(enddeviceslist) / sizeof(enddeviceslist[0]);
 int node = 0;
 bool recvall = false;
 
@@ -47,10 +47,10 @@ String response, LoRaData, latText, lonText, gpsinfo;
 String serialres;
 String latitude, longitude;
 String extractedString = "";
-String NodeName[16 * enddevices_num];
+String NodeName[1000];
 float degrees = 0.0;
 float lat, lon;
-float temp[16 * enddevices_num], humi[16 * enddevices_num];
+float temp[1000], humi[1000];
 unsigned long setupstartTime, waitingtime, setupendtime, setuptime;
 double speed = -1;
 bool speedcheck;
@@ -429,6 +429,133 @@ void sendHttpRequest()
   SerialMon.println("\n----------   End of sendHttpRequest()   ----------\n");
 }
 
+String fetchActiveNode()
+{
+  Serial.println("\n----------   Start of fetchJsonConfig()   ----------\n");
+  String response;
+  int maxRetries = 5; // Maximum number of retries
+
+  for (int retry = 1; retry <= maxRetries; retry++)
+  {
+    if (client.connect("rung.ddns.net", PORT))
+    {
+      String request = "GET /api/node HTTP/1.1\r\n";
+      request += "Host: rung.ddns.net\r\n";
+      request += "\r\n";
+      client.print(request);
+
+      unsigned long startTime = millis();
+
+      while (client.connected() && (millis() - startTime) < 10000)
+      {
+        while (client.available())
+        {
+          char c = client.read();
+          response += c;
+          Serial.write(c);
+        }
+      }
+      client.stop();
+      delay(1000);
+      Serial.println("Response =" + response);
+
+      int start = response.indexOf('{');
+      int end = response.lastIndexOf('}');
+
+      if (start != -1 && end != -1 && end > start)
+      {
+        String jsonPart = response.substring(start, end + 1);
+        Serial.println("\nExtracted JSON: " + jsonPart);
+        return jsonPart;
+      }
+      else
+      {
+        Serial.println("JSON not found in the response (Retry " + String(retry) + " of " + String(maxRetries) + ").");
+        response = ""; // Clear the response for the next attempt
+      }
+    }
+    else
+    {
+      Serial.println("Failed to connect to the server (Retry " + String(retry) + " of " + String(maxRetries) + ").");
+    }
+  }
+
+  Serial.println("\nReached maximum number of retries. Exiting fetchJsonConfig()\n");
+  return "";
+}
+
+void parseActiveNode(String jsonInput)
+{
+  const char *jsonString = jsonInput.c_str();
+  ;
+  StaticJsonDocument<500> doc;
+  DeserializationError error = deserializeJson(doc, jsonString);
+
+  if (error)
+  {
+    Serial.print(F("Failed to parse JSON: "));
+    Serial.println(error.c_str());
+    return;
+  }
+
+  JsonArray nodenames = doc["nodenames"];
+
+  const size_t arraySize = nodenames.size();
+  if (arraySize > 1)
+  {
+    String nodenamesArray[arraySize];
+
+    for (size_t i = 0; i < arraySize; i++)
+    {
+      nodenamesArray[i] = nodenames[i].as<String>();
+    }
+
+    Serial.println(F("Extracted nodenames:"));
+    for (size_t i = 0; i < arraySize; i++)
+    {
+      Serial.println(nodenamesArray[i]);
+    }
+
+    if (enddevices_num == arraySize)
+    {
+      for (size_t i = 0; i < arraySize; i++)
+      {
+        for (size_t j = 0; j < enddevices_num; j++)
+        {
+          if (enddeviceslist[i] = nodenamesArray[j])
+          {
+            enddeviceslist[i] = nodenamesArray[j];
+          }
+        }
+      }
+    }
+    else
+    {
+      enddevices_num = arraySize;
+      for (size_t j = 0; j < enddevices_num; j++)
+      {
+        enddeviceslist[j] = nodenamesArray[j];
+      }
+    }
+
+    Serial.println(F("nodenames(nodenamesArray):"));
+    for (size_t i = 0; i < arraySize; i++)
+    {
+      Serial.println(nodenamesArray[i]);
+    }
+
+    Serial.println(F("nodenames(enddeviceslist):"));
+    for (size_t i = 0; i < enddevices_num; i++)
+    {
+      Serial.println(enddeviceslist[i]);
+    }
+  }
+  else
+  {
+    Serial.print("Failed to get Nodenames");
+  }
+}
+
 String fetchJsonConfig()
 {
   Serial.println("\n----------   Start of fetchJsonConfig()   ----------\n");
@@ -741,6 +868,7 @@ void setup()
   GPSavg(0);
   connect2LTE();
   parseJsonConfig(fetchJsonConfig());
+  parseActiveNode(fetchActiveNode());
 
   SerialMon.println("\n----------   End of Setup   ----------\n");
   SerialMon.println("\nWaiting for Data\n");
@@ -750,8 +878,8 @@ void setup()
 
 void loop()
 {
-
   waitingtime = millis();
+  // recvall = true;
 
   int packetSize = LoRa.parsePacket();
   if (packetSize)
@@ -823,7 +951,6 @@ void loop()
 
   if (recvall)
   {
-
     Serial.print(latText);
     Serial.print(lonText);
     float latValue = latText.toFloat();
