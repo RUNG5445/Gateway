@@ -625,13 +625,24 @@ bool connect2LTE()
   delay(1000);
   sendAT("AT+CSOCKSETPN=1", 5000, DEBUG);
   String res = sendAT("AT+NETOPEN", 5000, DEBUG);
-
+  Serial.println("--------------");
+  Serial.println("Response: " + res); // Print the response for debugging
+  Serial.println("--------------");
   if (res.indexOf("OK") == -1 || res.indexOf("not") != -1)
   {
+    Serial.println("Restarting...");
     esp_restart();
   }
 
   String response = sendAT("AT+IPADDR", 5000, DEBUG);
+  Serial.println("--------------");
+  Serial.println("Response: " + response);
+  Serial.println("--------------");
+  if (response.indexOf("ERROR") != -1)
+  {
+    Serial.println("Restarting...");
+    esp_restart();
+  }
 
   // sendAT("AT+CPING=\"rung.ddns.net\",1,4", 10000, DEBUG);
   SerialMon.println("\n----------   End of connect2LTE()   ----------\n");
@@ -683,7 +694,7 @@ void setup()
   setupstartTime = millis();
   Serial.begin(UART_BAUD);
   Serial1.begin(UART_BAUD, SERIAL_8N1, PIN_RX, PIN_TX);
-  Serial2.begin(9600, SERIAL_8N1, 32, 33);
+  Serial2.begin(9600, SERIAL_8N1, 33, 32);
   LoRa.setPins(ss, rst, dio0);
 
   if (gSyncWord == 0 || gTxPower == 0 || gfreq == 0 || ginterval == 0)
@@ -727,7 +738,7 @@ void setup()
 
   modemPowerOn();
   delay(500);
-  GPSavg(1);
+  GPSavg(0);
   connect2LTE();
   parseJsonConfig(fetchJsonConfig());
 
