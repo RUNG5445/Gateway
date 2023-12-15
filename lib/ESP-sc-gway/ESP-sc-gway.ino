@@ -6,7 +6,6 @@
 #define ESP32_ARCH 1
 #endif
 #include <Arduino.h>
-#include <SPIFFS.h>
 #include <Esp.h> // ESP8266 specific IDE functions
 #include <string.h>
 #include <stdio.h>
@@ -30,6 +29,9 @@
 // Local include files
 #include "loraModem.h"
 #include "loraFiles.h"
+#include "sensor.h"
+#include "oLED.h"
+
 extern "C"
 {
 #include "lwip/err.h"
@@ -1039,7 +1041,7 @@ void sendstat()
 // ----------------------------------------------------------------------------
 void setup()
 {
-Serial.print("Test");
+
   char MAC_char[19]; // XXX Unbelievable
   MAC_char[18] = 0;
 
@@ -1057,7 +1059,7 @@ Serial.print("Test");
 #if _LFREQ == 433
   Serial.print(freqs[0]);
   Serial.print(F(" EU433"));
-#elif _LFREQ == 923 
+#elif _LFREQ == 868
   Serial.print(freqs[0]);
   Serial.print(F(" EU868"));
 #endif
@@ -1105,7 +1107,10 @@ Serial.print("Test");
 #else
   Serial.println(F("Do Asserts"));
 #endif
-Serial.println(F("hereeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeees"));
+
+#if OLED >= 1
+  init_oLED();
+#endif
 
   delay(500);
   yield();
@@ -1122,7 +1127,7 @@ Serial.println(F("hereeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
   WiFi.setAutoConnect(true);
   // WiFi.begin();
 
-//  WlanReadWpa(); // Read the last Wifi settings from SPIFFS into memory
+  WlanReadWpa(); // Read the last Wifi settings from SPIFFS into memory
 
   WiFi.macAddress(MAC_array);
 
@@ -1183,9 +1188,9 @@ Serial.println(F("hereeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 
   // Init the SPI pins
 #if ESP32_ARCH == 1
-  SPI.begin();
+  SPI.begin(SCK, MISO, MOSI, SS);
 #else
-  SPI.begin(5, 19, 18, 23);
+  SPI.begin();
 #endif
 
   delay(500);
