@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
-#include <ArduinoJson.h>          // JSON library for Arduino
-#include <TinyGsmClientSIM7600.h> // Library for GSM communication using SIM7600 module
-#include <LoRa.h>                 // Library for LoRa communication
+#include <ArduinoJson.h>
+#include <TinyGsmClientSIM7600.h>
+#include <LoRa.h>
 #include <TinyGPS++.h>
 
 #define SerialAT Serial1
@@ -19,7 +19,9 @@ String URI = "http://rung.ddns.net:8050/";
 int PORT = 8050;
 
 // Define End devices list
-String enddeviceslist[] = {"Node1", "Node2"};
+String enddeviceslist[] = {"Node1", "Node2", "Node3"};
+String nodenametemp[100];
+int nodenametemp_num = sizeof(enddeviceslist) / sizeof(enddeviceslist[0]);
 int enddevices_num = sizeof(enddeviceslist) / sizeof(enddeviceslist[0]);
 int node = 0;
 bool recvall = false;
@@ -47,13 +49,16 @@ String response, LoRaData, latText, lonText, gpsinfo;
 String serialres;
 String latitude, longitude;
 String extractedString = "";
-String NodeName[1000];
+String guser = "user2";
+String NodeName[1000], user[300];
 float degrees = 0.0;
 float lat, lon;
-float temp[1000], humi[1000];
+float temp[200], humi[200], ebattlvl[200];
 unsigned long setupstartTime, waitingtime, setupendtime, setuptime;
 double speed = -1;
 bool speedcheck;
+float battPercentage;
+float battVoltage;
 
 // LoRa configuration
 RTC_DATA_ATTR int gSyncWord;
@@ -154,85 +159,6 @@ String sendAT(String command, int interval, boolean debug)
   return response;
 }
 
-float convertlatCoordinate(String coordString)
-{
-  degrees = 0.0;
-  String degreesString = coordString.substring(0, 2);
-  int degreesValue = degreesString.toInt();
-
-  String minutesString = coordString.substring(2);
-  float minutesValue = minutesString.toFloat();
-
-  degrees = degreesValue + (minutesValue / 60.0);
-
-  Serial.print("Latitude : ");
-  Serial.println(degrees, 6);
-  return degrees;
-}
-
-float convertlonCoordinate(String coordString)
-{
-  degrees = 0.0;
-  String degreesString = coordString.substring(0, 3);
-  int degreesValue = degreesString.toInt();
-
-  String minutesString = coordString.substring(3);
-  float minutesValue = minutesString.toFloat();
-
-  degrees = degreesValue + (minutesValue / 60.0);
-
-  Serial.print("Longtitude : ");
-  Serial.println(degrees, 6);
-  return degrees;
-}
-
-bool readgps(int interval)
-{
-  serialres = "";
-  lat = 0;
-  lon = 0;
-  long int startTime = millis();
-  while (((millis() - startTime)) < interval)
-  {
-    while (Serial2.available() > 0)
-    {
-      int readData = Serial2.read();
-      gps.encode(readData);
-      serialres += char(readData);
-    }
-  }
-  Serial2.flush();
-  if (serialres.indexOf(",A") != -1 && serialres.indexOf("$GPRMC") != -1)
-  {
-    int startPos = serialres.indexOf("$GPRMC");
-    int endPos = serialres.indexOf("E", startPos);
-    extractedString = serialres.substring(startPos, endPos + 2);
-    Serial.println(extractedString);
-    // Find the positions of 'N,' and 'E,' in the input string
-    int nPos = serialres.indexOf("N,");
-    int ePos = serialres.indexOf("E,");
-
-    // Check if 'N,' and 'E,' were found in the input string
-    if (nPos != -1 && ePos != -1)
-    {
-      // Extract the latitude and longitude substrings
-      latitude = extractedString.substring(nPos - 11, nPos);
-      lat = convertlatCoordinate(latitude);
-      latText = String(lat, 6);
-
-      longitude = extractedString.substring(ePos - 12, ePos);
-      lon = convertlonCoordinate(longitude);
-      lonText = String(lon, 6);
-      return true;
-    }
-  }
-  else
-  {
-    return false;
-  }
-  return false;
-}
-
 void waitForGPSFix(float timeoutMinutes)
 {
   unsigned long startTime = millis();
@@ -240,14 +166,21 @@ void waitForGPSFix(float timeoutMinutes)
 
   while (millis() - startTime < timeoutMillis)
   {
-    lat = 0;
-    lon = 0;
-    unsigned long elapsedTime = (millis() - startTime) / 1000;
-
-    if (readgps(300) && lat > 13 && lat < 14 && lon > 100 && lon < 101)
+    while (Serial2.available() > 0)
     {
-      // GPS fix found
-      break;
+      if (gps.encode(Serial2.read()))
+      {
+        if (gps.location.isValid())
+        {
+          lat = gps.location.lat();
+          lon = gps.location.lng();
+
+          if ((lat >= -90 && lat <= 90) && (lon >= -180 && lon <= 180))
+          {
+            return;
+          }
+        }
+      }
     }
   }
 }
@@ -369,7 +302,7 @@ void sendHttpRequest()
   bool DEBUG = true;
   SerialMon.println("\n----------   Start of sendHttpRequest()   ----------\n");
 
-  for (int i = 0; i < enddevices_num; i++)
+  for (int i = 0; i < nodenametemp_num; i++)
   {
     unsigned long startTime = millis();
     unsigned long timeout = 10000;
@@ -377,10 +310,13 @@ void sendHttpRequest()
     // Create a JSON object with key-value pairs
     String payload = "{";
     payload += "\"nodename\":\"" + NodeName[i] + "\",";
+    payload += "\"user\":\"" + user[i] + "\",";
     payload += "\"temperature\":" + String(temp[i]) + ",";
     payload += "\"humidity\":" + String(humi[i]) + ",";
     payload += "\"latitude\":" + String(latText) + ",";
     payload += "\"longitude\":" + String(lonText) + ",";
+    payload += "\"ebatlvl\":" + String(ebattlvl[i]) + ",";
+    payload += "\"gbatlvl\":" + String(battPercentage, 2) + ",";
     if (speedcheck == true)
     {
       payload += "\"speed\":" + String(speed);
@@ -424,8 +360,9 @@ void sendHttpRequest()
       Serial.println("\nData was not inserted");
     }
     client.stop();
+    delay(1500);
   }
-  delay(1000);
+
   SerialMon.println("\n----------   End of sendHttpRequest()   ----------\n");
 }
 
@@ -433,13 +370,13 @@ String fetchActiveNode()
 {
   Serial.println("\n----------   Start of fetchJsonConfig()   ----------\n");
   String response;
-  int maxRetries = 5; // Maximum number of retries
+  int maxRetries = 10; // Maximum number of retries
 
   for (int retry = 1; retry <= maxRetries; retry++)
   {
     if (client.connect("rung.ddns.net", PORT))
     {
-      String request = "GET /api/node HTTP/1.1\r\n";
+      String request = "GET /api/node?user=" + guser + " HTTP/1.1\r\n";
       request += "Host: rung.ddns.net\r\n";
       request += "\r\n";
       client.print(request);
@@ -456,7 +393,7 @@ String fetchActiveNode()
         }
       }
       client.stop();
-      delay(1000);
+      delay(2000);
       Serial.println("Response =" + response);
 
       int start = response.indexOf('{');
@@ -486,8 +423,9 @@ String fetchActiveNode()
 
 void parseActiveNode(String jsonInput)
 {
+  // GPSavg(1);
   const char *jsonString = jsonInput.c_str();
-  ;
+
   StaticJsonDocument<500> doc;
   DeserializationError error = deserializeJson(doc, jsonString);
 
@@ -522,7 +460,7 @@ void parseActiveNode(String jsonInput)
       {
         for (size_t j = 0; j < enddevices_num; j++)
         {
-          if (enddeviceslist[i] = nodenamesArray[j])
+          if (enddeviceslist[i] == nodenamesArray[j])
           {
             enddeviceslist[i] = nodenamesArray[j];
           }
@@ -560,14 +498,15 @@ String fetchJsonConfig()
 {
   Serial.println("\n----------   Start of fetchJsonConfig()   ----------\n");
   String response;
-  int maxRetries = 5; // Maximum number of retries
+  int maxRetries = 10; // Maximum number of retries
 
   for (int retry = 1; retry <= maxRetries; retry++)
   {
     if (client.connect("rung.ddns.net", PORT))
     {
-      String request = "GET /api/showconfig HTTP/1.1\r\n";
+      String request = "GET /api/showconfig?user=" + guser + " HTTP/1.1\r\n";
       request += "Host: rung.ddns.net\r\n";
+      request += "Connection: close\r\n";
       request += "\r\n";
       client.print(request);
 
@@ -584,7 +523,7 @@ String fetchJsonConfig()
       }
       client.stop();
       delay(1000);
-      Serial.println("Response =" + response);
+      Serial.println("\nResponse = " + response);
 
       int start = response.indexOf('{');
       int end = response.lastIndexOf('}');
@@ -598,7 +537,7 @@ String fetchJsonConfig()
       else
       {
         Serial.println("JSON not found in the response (Retry " + String(retry) + " of " + String(maxRetries) + ").");
-        response = ""; // Clear the response for the next attempt
+        response = "";
       }
     }
     else
@@ -750,8 +689,8 @@ bool connect2LTE()
   sendAT("AT+CPIN?", 2000, DEBUG);
 
   delay(1000);
-  sendAT("AT+CSOCKSETPN=1", 5000, DEBUG);
-  String res = sendAT("AT+NETOPEN", 5000, DEBUG);
+  sendAT("AT+CSOCKSETPN=1", 3000, DEBUG);
+  String res = sendAT("AT+NETOPEN", 3000, DEBUG);
   Serial.println("--------------");
   Serial.println("Response: " + res); // Print the response for debugging
   Serial.println("--------------");
@@ -776,43 +715,48 @@ bool connect2LTE()
   return true;
 }
 
-String processJsonInput(const char *jsonInput, int index)
-{
-  SerialMon.println("\n----------   Start of processJsonInput()   ----------\n");
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, jsonInput);
-
-  if (error)
-  {
-    Serial.print("Parsing failed: ");
-    Serial.println(error.c_str());
-    // return;
-  }
-
-  NodeName[index] = doc["NodeName"].as<String>();
-  temp[index] = doc["Temperature"];
-  humi[index] = doc["Humidity"];
-  SerialMon.println("\n----------   End of processJsonInput()   ----------\n");
-  return NodeName[index];
-}
-
 void sleep(float sec)
 {
   Serial.println("\n----------   Start of sleep()   ----------\n");
   double min_d = sec / 60;
-  // Set wakeup time
-  esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.8 * 1000000);
+
+  esp_sleep_enable_timer_wakeup((ginterval - min_d) * 60 * 0.5 * 1000000);
 
   Serial.print("Duration: ");
   Serial.print(sec / 60);
   Serial.println(" minutes");
 
-  // Go to sleep
   Serial.print("Going to sleep for ");
-  Serial.print((ginterval - min_d) * 0.8);
+  Serial.print((ginterval - min_d) * 0.7);
   Serial.println(" minutes");
   Serial.println("\n----------   End of sleep()   ----------\n");
   esp_deep_sleep_start();
+}
+
+void readBattLevel()
+{
+  SerialMon.println("\n----------   Start of readBattLevel()   ----------\n");
+  const int numOfReadings = 10000;
+  const float batteryFullVoltage = 4.2;
+  const float batteryOffVoltage = 2.5;
+
+  int battReadingsSum = 0;
+  for (int i = 0; i < numOfReadings; i++)
+  {
+    battReadingsSum += analogRead(BAT_ADC);
+  }
+
+  float avgReading = static_cast<float>(battReadingsSum) / static_cast<float>(numOfReadings);
+  battVoltage = avgReading * (3.3 / 4096.0) * 2.0 * 1.079691;
+  battPercentage = 100.0 * (1.0 - ((batteryFullVoltage - battVoltage) / (batteryFullVoltage - batteryOffVoltage)));
+
+  Serial.println("batt_level : " + String(battPercentage, 2));
+  if (battPercentage > 100.00)
+  {
+    battPercentage = 100.00;
+  }
+  Serial.println("batt_volt : " + String(battVoltage, 2));
+  SerialMon.println("\n----------   End of readBattLevel()   ----------\n");
 }
 
 void setup()
@@ -865,15 +809,18 @@ void setup()
 
   modemPowerOn();
   delay(500);
-  GPSavg(0);
   connect2LTE();
   parseJsonConfig(fetchJsonConfig());
   parseActiveNode(fetchActiveNode());
-
   SerialMon.println("\n----------   End of Setup   ----------\n");
   SerialMon.println("\nWaiting for Data\n");
   setupendtime = millis();
   setuptime = setupendtime - setupstartTime;
+  for (int i = 0; i < enddevices_num; i++)
+  {
+    nodenametemp[i] = enddeviceslist[i];
+  }
+  nodenametemp_num = enddevices_num;
 }
 
 void loop()
@@ -917,30 +864,109 @@ void loop()
     {
       LoRaData[dataIndex] = '\0';
 
-      String recvnode = processJsonInput(LoRaData, node);
-      if (recvnode == enddeviceslist[node])
+      DynamicJsonDocument doc(256);
+      deserializeJson(doc, LoRaData);
+
+      String input_nodename = doc["NodeName"].as<String>();
+      String input_user = doc["User"].as<String>();
+      float input_temp = doc["Temperature"];
+      float input_humi = doc["Humidity"];
+      float input_batt = doc["BatLvl"];
+
+      for (int i = 0; i < enddevices_num; i++)
       {
-        Serial.println("Successfully receieved data from " + enddeviceslist[node]);
-        node = node + 1;
+        Serial.println(enddeviceslist[i]);
+
+        if (enddeviceslist[i] == input_nodename)
+        {
+          Serial.println("Successfully receieved data from " + enddeviceslist[i]);
+          user[node] = input_user;
+          temp[node] = input_temp;
+          humi[node] = input_humi;
+          ebattlvl[node] = input_batt;
+          nodenametemp[node] = input_nodename;
+
+          for (int j = i; j < enddevices_num - 1; j++)
+          {
+            enddeviceslist[j] = enddeviceslist[j + 1];
+          }
+          enddevices_num--;
+
+          Serial.print("Remaining nodename: ");
+          for (int k = 0; k < enddevices_num; k++)
+          {
+            Serial.print(enddeviceslist[k]);
+            Serial.print(" ");
+          }
+          Serial.println();
+          node = node + 1;
+          break;
+        }
       }
-      if (node == enddevices_num)
+    }
+    if (enddevices_num == 0)
+    {
+      Serial.print("Temp: ");
+      for (int i = 0; i < nodenametemp_num; i++)
       {
-        recvall = true;
-        Serial.println("Successfully received data from all nodes.");
-
-        delay(5000);
-
-        String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, einterval);
-
-        Serial.println("Switching to sending state...");
-        Serial.print("Packet send: ");
-        Serial.println(jsonOutput);
-        LoRa.setSyncWord(0XF2);
-        LoRa.beginPacket();
-        LoRa.print(jsonOutput);
-        LoRa.endPacket();
-        Serial.println("Packet sent.");
+        if (i == nodenametemp_num - 1)
+        {
+          Serial.print(temp[i]);
+        }
+        else
+        {
+          Serial.print(temp[i]);
+          Serial.print(", ");
+        }
       }
+      Serial.println();
+
+      Serial.print("Humi: ");
+      for (int i = 0; i < nodenametemp_num; i++)
+      {
+        if (i == nodenametemp_num - 1)
+        {
+          Serial.print(humi[i]);
+        }
+        else
+        {
+          Serial.print(humi[i]);
+          Serial.print(", ");
+        }
+      }
+      Serial.println();
+
+      Serial.print("BattLvl: ");
+      for (int i = 0; i < nodenametemp_num; i++)
+      {
+        if (i == nodenametemp_num - 1)
+        {
+          Serial.print(ebattlvl[i]);
+        }
+        else
+        {
+          Serial.print(ebattlvl[i]);
+          Serial.print(", ");
+        }
+      }
+      Serial.println();
+
+      recvall = true;
+      Serial.println("Successfully received data from all nodes.");
+
+      delay(5000);
+
+      String jsonOutput = createJsonString(eSyncWord, eTxPower, efreq, einterval);
+
+      Serial.println("Switching to sending state...");
+      Serial.print("Packet send: ");
+      Serial.println(jsonOutput);
+      LoRa.setTxPower(20);
+      LoRa.setSyncWord(242);
+      LoRa.beginPacket();
+      LoRa.print(jsonOutput);
+      LoRa.endPacket();
+      Serial.println("Packet sent.");
     }
   }
   if (waitingtime > (ginterval * 60 * 1000) + setuptime)
@@ -951,18 +977,22 @@ void loop()
 
   if (recvall)
   {
-    Serial.print(latText);
-    Serial.print(lonText);
-    float latValue = latText.toFloat();
-    float lonValue = lonText.toFloat();
+    waitForGPSFix(0.017);
+    float latValue = lat;
+    float lonValue = lon;
+    Serial.print("Latitude: ");
+    Serial.println(latValue, 6);
+    Serial.print("Longitude: ");
+    Serial.println(lonValue, 6);
 
-    if (latValue > 13 && lonValue > 100)
+    if ((latValue > -90 && latValue < 0) || (latValue > 0 && latValue <= 90) && (lonValue > -180 && lonValue < 0) || (lonValue > 0 && lonValue <= 180))
     {
       GPSavg(5);
       Serial.print("Speed in km/h = ");
       speed = gps.speed.kmph();
       Serial.println(speed);
       speedcheck = true;
+      readBattLevel();
       sendHttpRequest();
     }
     else
@@ -971,12 +1001,13 @@ void loop()
       speedcheck = false;
       readcellinfo();
       sendLocationRequest();
+      readBattLevel();
       sendHttpRequest();
     }
     unsigned long endTime = millis();
     unsigned long duration = endTime - waitingtime + setuptime;
     float durationSeconds = duration / 1000.0;
     changeGWconfig();
-    sleep(durationSeconds);
+    // sleep(durationSeconds);
   }
 }
