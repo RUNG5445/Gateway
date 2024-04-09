@@ -44,5 +44,10 @@ Before uploading the code, make sure to configure the following parameters:
 - Ensure compliance with regulations and data privacy policies while transmitting sensor data over networks.
 - Refer to the documentation of the respective libraries for detailed usage instructions and additional features.
 
+## Authors
+
+- [Rungrueng Janrueng](https://github.com/RUNG5445)
+
 ## License
+
 This project is licensed under the [MIT License](LICENSE).
