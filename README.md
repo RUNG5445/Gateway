@@ -1,4 +1,4 @@
-# README
+# Gateway
 
 This Arduino code is designed to run on a microcontroller board with connectivity options such as LoRa and LTE (using SIM7600 module). The purpose of the code is to collect data from various sensors (such as temperature, humidity, battery level) and transmit it to a server via either LoRa or LTE connectivity. Additionally, it retrieves configuration information and active node data from the server.
 
